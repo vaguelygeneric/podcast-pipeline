@@ -232,7 +232,7 @@ def render_frames(
         # Amplitude tint: very subtle white brightening of the centre on loud frames
         if amp > 0.05:
             tint_alpha = int(amp * 18)    # max ≈ 7% opacity at full amplitude
-            tint  = Image.new("RGB", (width, height), (255, 255, 255))
+            tint  = Image.new("RGB", (width, height), (0,0,0))
             mask  = Image.new("L",   (width, height), 0)
             md    = ImageDraw.Draw(mask)
             tr    = int(min_dim * 0.45)

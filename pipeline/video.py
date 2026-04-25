@@ -18,9 +18,9 @@ from pathlib import Path
 def build_video(
     mp3_path:   Path,
     logo_path:  Path,
+    quick:      bool,
     resolution: str = "1280x720",
     fps:        int = 30,
-    quick:      bool = False,
 ):
     """
     Full video build:
