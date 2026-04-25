@@ -118,6 +118,22 @@ def render_frames(
     logo_img = None
     if logo_path and Path(logo_path).exists():
         raw = Image.open(logo_path).convert("RGBA")
+
+        # If the logo has dark/black pixels on a transparent background
+        # (designed for light backgrounds), invert the RGB so it reads on
+        # the dark video canvas. Detection: median luminance of opaque pixels < 64.
+        import numpy as np
+        arr = np.array(raw)
+        opaque = arr[:, :, 3] > 10
+        if opaque.any():
+            lum = 0.299 * arr[opaque, 0] + 0.587 * arr[opaque, 1] + 0.114 * arr[opaque, 2]
+            if lum.mean() < 64:
+                # Invert RGB, preserve alpha
+                rgb = arr[:, :, :3].astype(np.int16)
+                rgb[opaque] = 255 - rgb[opaque]
+                arr[:, :, :3] = rgb.clip(0, 255).astype(np.uint8)
+                raw = Image.fromarray(arr, "RGBA")
+
         logo_size = int(r_logo * 2)
         logo_img  = raw.resize((logo_size, logo_size), Image.LANCZOS)
 
