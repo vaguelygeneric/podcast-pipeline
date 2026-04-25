@@ -15,7 +15,7 @@ from palette import (
 # ── Defaults (all overridable via render_frames kwargs) ───────────────────────
 DEFAULT_RING_SCALE   = 1.0    # multiplier on all ring radii (0.5–2.0)
 DEFAULT_N_BARS       = 120    # number of arc waveform bars
-DEFAULT_BAR_HEIGHT   = 0.14  # bar_max as fraction of min(width, height)  ← was 0.08
+DEFAULT_BAR_HEIGHT   = 0.2  # bar_max as fraction of min(width, height)  ← was 0.08
 DEFAULT_N_SPARKS     = 36    # number of rotating spark particles          ← was 24
 DEFAULT_GLOW_BLUR    = 4     # Gaussian blur radius on glow rings
 

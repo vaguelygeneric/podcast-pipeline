@@ -50,7 +50,7 @@ def main():
     parser.add_argument("--glow-blur",  type=int,   default=DEFAULT_GLOW_BLUR,
                         help=f"Glow ring blur radius px (default: {DEFAULT_GLOW_BLUR})")
     parser.add_argument("--quick", action="store_true",
-                        help="Use faster rendering method (default: true)")
+                        help="Use faster rendering method (default: false)")
     args = parser.parse_args()
 
     input_mp3 = Path(args.input)
