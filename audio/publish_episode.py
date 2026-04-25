@@ -5,7 +5,6 @@ import subprocess
 import os
 import re
 import json
-from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -224,7 +223,8 @@ permalink: /podcast/{show}/{ep_str}/
 {description}
 """
 
-    path = Path("../output/_podcast/{show}/{ep_str}.md")
+    path = f"output/_podcast/{show}/{ep_str}.md"
+
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
     with open(path, "w") as f:
@@ -265,10 +265,10 @@ def main():
     if args.test:
         print("\n=== TEST MODE ===")
 
-        single_pass(args.input, f"test-{base_name}-v1-singlepass.mp3")
+        single_pass(args.input, f"output/test-{base_name}-v1-singlepass.mp3")
 
         stats = loudnorm_pass1(args.input)
-        loudnorm_pass2(args.input, f"test-{base_name}-v2-doublepass.mp3", stats)
+        loudnorm_pass2(args.input, f"output/test-{base_name}-v2-doublepass.mp3", stats)
 
         print("\nCreated test variants. Compare and choose.")
 
@@ -278,7 +278,7 @@ def main():
     # PRODUCTION MODE
     # -------------------------
     stats = loudnorm_pass1(args.input)
-    final_audio = f"{base_name}.mp3"
+    final_audio = f"output/{base_name}.mp3"
     loudnorm_pass2(args.input, final_audio, stats)
 
     duration = get_duration(final_audio)

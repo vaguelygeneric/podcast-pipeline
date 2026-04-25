@@ -6,7 +6,15 @@ from pathlib import Path
 import struct
 
 
-def extract_amplitude(input_mp3: Path, output_json: Path, fps: int):
+# src/audio.py
+
+import subprocess
+import json
+from pathlib import Path
+import struct
+
+
+def extract_amplitude(input_mp3: Path, output_json: Path, fps: int = 30):
     """
     Extract RMS amplitude aligned to video FPS.
     """

@@ -36,7 +36,7 @@ def main():
                         help="Output resolution e.g. 1920x1080 (default: 1280x720)")
     parser.add_argument("--fps",        type=int, default=30,
                         help="Video framerate (default: 30)")
-    parser.add_argument("--logo",       default="assets/images/logo.png",
+    parser.add_argument("--logo",       default=".files/images/logo.png",
                         help="Logo PNG with transparency")
 
     parser.add_argument("--ring-scale", type=float, default=DEFAULT_RING_SCALE,
