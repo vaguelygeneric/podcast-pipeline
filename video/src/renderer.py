@@ -15,7 +15,7 @@ from palette import (
 # ── Defaults (all overridable via render_frames kwargs) ───────────────────────
 DEFAULT_RING_SCALE   = 1.0    # multiplier on all ring radii (0.5–2.0)
 DEFAULT_N_BARS       = 120    # number of arc waveform bars
-DEFAULT_BAR_HEIGHT   = 0.2  # bar_max as fraction of min(width, height)  ← was 0.08
+DEFAULT_BAR_HEIGHT   = 0.14  # bar_max as fraction of min(width, height)  ← was 0.08
 DEFAULT_N_SPARKS     = 36    # number of rotating spark particles          ← was 24
 DEFAULT_GLOW_BLUR    = 4     # Gaussian blur radius on glow rings
 
@@ -178,9 +178,10 @@ def render_frames(
         frame = Image.alpha_composite(frame, rings)
 
         # ── Layer 3: arc waveform bars ────────────────────────────────────
-        half        = n_bars // 2
-        window_amps = [amplitudes[max(0, min(len(amplitudes) - 1, i + j))]
-                       for j in range(-half, half)]
+        # Trailing window: last n_bars frames up to now, wrapping at boundaries.
+        # Avoids clamping artifact where bars vanish at start/end of file.
+        n = len(amplitudes)
+        window_amps = [amplitudes[(i - n_bars + 1 + j) % n] for j in range(n_bars)]
         bars = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         _draw_arc_bars(bars, cx, cy, window_amps, pulse_outer, bar_max, BAR_COLOR)
         frame = Image.alpha_composite(frame, bars)
