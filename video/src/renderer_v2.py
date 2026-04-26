@@ -19,7 +19,7 @@ import random
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-from palette import (
+from video.src.palette import (
     BG_CENTER, BG_EDGE,
     RING_INNER, RING_MID, RING_OUTER, RING_BEAT,
     BAR_COLOR, SPARK_COLOR, GLOW_TINT,
@@ -31,7 +31,10 @@ DEFAULT_RING_SCALE  = 1.0
 DEFAULT_N_BARS      = 180    # bars across full width — denser = sleeker
 DEFAULT_BAR_HEIGHT  = 0.28   # max bar height as fraction of canvas height
 DEFAULT_N_SPARKS    = 60     # max live particles at any moment
-DEFAULT_GLOW_BLUR   = 4
+DEFAULT_GLOW_BLUR        = 4
+DEFAULT_WATERMARK_OPACITY = 0.35   # steady-state watermark opacity (0.0–1.0)
+DEFAULT_WATERMARK_MARGIN  = 24     # px inset from bottom-right corner
+DEFAULT_WATERMARK_SIZE    = 0.08   # watermark height as fraction of canvas height
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,6 +108,41 @@ def _load_logo(logo_path, logo_size):
             arr[:, :, :3] = rgb.clip(0, 255).astype(np.uint8)
             raw = Image.fromarray(arr, "RGBA")
     return raw.resize((logo_size, logo_size), Image.LANCZOS)
+
+
+def _load_watermark(wm_path, target_h):
+    """Load watermark PNG, auto-invert if dark-on-transparent, scale to target height."""
+    raw    = Image.open(wm_path).convert('RGBA')
+    arr    = np.array(raw)
+    opaque = arr[:, :, 3] > 10
+    if opaque.any():
+        lum = (0.299 * arr[opaque, 0] +
+               0.587 * arr[opaque, 1] +
+               0.114 * arr[opaque, 2])
+        if lum.mean() < 64:
+            rgb           = arr[:, :, :3].astype(np.int16)
+            rgb[opaque]   = 255 - rgb[opaque]
+            arr[:, :, :3] = rgb.clip(0, 255).astype(np.uint8)
+            raw = Image.fromarray(arr, 'RGBA')
+    # Scale preserving aspect ratio to target height
+    aspect   = raw.width / raw.height
+    target_w = int(target_h * aspect)
+    return raw.resize((target_w, target_h), Image.LANCZOS)
+
+
+def _watermark_alpha(frame_idx, n_frames, fps, steady_opacity):
+    """Fade in over first 2s, steady middle, fade out over last 2s."""
+    fade_frames = fps * 2
+    if frame_idx < fade_frames:
+        t = frame_idx / fade_frames
+        # ease-in: smooth start
+        t = t * t * (3 - 2 * t)
+    elif frame_idx > n_frames - fade_frames:
+        t = (n_frames - frame_idx) / fade_frames
+        t = max(0.0, t * t * (3 - 2 * t))
+    else:
+        t = 1.0
+    return steady_opacity * t
 
 
 def _draw_ring(draw, cx, cy, radius, thickness, color, alpha):
@@ -267,6 +305,11 @@ def render_frames(
     bar_height:     float = DEFAULT_BAR_HEIGHT,
     n_sparks:       int   = DEFAULT_N_SPARKS,
     glow_blur:      int   = DEFAULT_GLOW_BLUR,
+    watermark_path: Path  = None,
+    watermark_opacity: float = DEFAULT_WATERMARK_OPACITY,
+    watermark_size: float = DEFAULT_WATERMARK_SIZE,
+    watermark_margin: int = DEFAULT_WATERMARK_MARGIN,
+    fps:            int   = 30,
 ):
     rng = random.Random(42)   # deterministic — same render = same particles
 
@@ -298,6 +341,15 @@ def render_frames(
     logo_img = None
     if logo_path and Path(logo_path).exists():
         logo_img = _load_logo(logo_path, int(r_logo * 2))
+
+    # Watermark
+    wm_img = None
+    if watermark_path and Path(watermark_path).exists():
+        wm_h   = int(height * watermark_size)
+        wm_img = _load_watermark(watermark_path, wm_h)
+        wm_x   = width  - wm_img.width  - watermark_margin
+        wm_y   = height - wm_img.height - watermark_margin
+        print(f'  Watermark loaded: {wm_img.size} → ({wm_x}, {wm_y})')
 
     # Particle pool — pre-seeded at silence
     particles = []
@@ -384,6 +436,16 @@ def render_frames(
             lo = Image.merge("RGBA", (r2, g2, b2, a2))
             lw, lh = lo.size
             frame.paste(lo, (int(cx - lw / 2), int(cy - lh / 2)), lo)
+
+        # ── Watermark (bottom-right, fades in/out) ──────────────────
+        if wm_img:
+            wm_a = _watermark_alpha(i, n_frames, fps, watermark_opacity)
+            if wm_a > 0.005:
+                wm = wm_img.copy()
+                r2, g2, b2, a2 = wm.split()
+                a2 = a2.point(lambda p: int(p * wm_a))
+                wm = Image.merge('RGBA', (r2, g2, b2, a2))
+                frame.paste(wm, (wm_x, wm_y), wm)
 
         frame.convert("RGB").save(output_dir / f"frame_{i:05d}.png", optimize=False)
 

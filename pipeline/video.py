@@ -52,7 +52,7 @@ def build_video(
 
     # ── Step 2: frame rendering ───────────────────────────────────────────────
     from video.src.renderer import render_frames, render_frames_quick, quick_render
-
+    from video.src.renderer_v2 import render_frames
     frames_dir = Path("temp/frames")
 
     if quick:

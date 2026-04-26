@@ -10,6 +10,7 @@ from renderer import (
     DEFAULT_RING_SCALE, DEFAULT_N_BARS,
     DEFAULT_BAR_HEIGHT, DEFAULT_N_SPARKS, DEFAULT_GLOW_BLUR,
 )
+from renderer_v2 import render_frames as render_frames_v2
 
 
 def render_video(input_mp3: Path, output_mp4: Path, fps: int):
@@ -51,6 +52,12 @@ def main():
                         help=f"Glow ring blur radius px (default: {DEFAULT_GLOW_BLUR})")
     parser.add_argument("--style",      default="v2", choices=["v1", "v2"],
                         help="Renderer style: v1=circular waveform, v2=bottom waveform + freeform particles (default: v2)")
+    parser.add_argument("--watermark",         default=None,
+                        help="Path to watermark PNG (shown bottom-right, fades in/out)")
+    parser.add_argument("--watermark-opacity", type=float, default=0.35,
+                        help="Steady-state watermark opacity 0.0–1.0 (default: 0.35)")
+    parser.add_argument("--watermark-size",    type=float, default=0.08,
+                        help="Watermark height as fraction of canvas height (default: 0.08)")
     parser.add_argument("--quick", action="store_true",
                         help="Use faster rendering method (default: true)")
     args = parser.parse_args()
@@ -77,15 +84,20 @@ def main():
         print("Using quick rendering method (faster, less features)…")
         render_frames_quick(amp_file, frames_dir, width, height)
     else:
-        print("Using full rendering method (slower, more features)…")
-        render_frames(
+        render_fn = render_frames_v2 if args.style == 'v2' else render_frames_v1
+        print(f"Using {args.style} renderer…")
+        render_fn(
             amp_file, frames_dir, width, height,
-            logo_path  = Path(args.logo),
-            ring_scale = args.ring_scale,
-            n_bars     = args.n_bars,
-            bar_height = args.bar_height,
-            n_sparks   = args.n_sparks,
-            glow_blur  = args.glow_blur,
+            logo_path         = Path(args.logo),
+            ring_scale        = args.ring_scale,
+            n_bars            = args.n_bars,
+            bar_height        = args.bar_height,
+            n_sparks          = args.n_sparks,
+            glow_blur         = args.glow_blur,
+            watermark_path    = Path(args.watermark) if args.watermark else None,
+            watermark_opacity = args.watermark_opacity,
+            watermark_size    = args.watermark_size,
+            fps               = args.fps,
         )
 
     render_video(input_mp3, output_mp4, args.fps)
