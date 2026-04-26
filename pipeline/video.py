@@ -48,14 +48,19 @@ def build_video(
     amp_file.parent.mkdir(exist_ok=True)
     extract_amplitude(mp3_path, amp_file, fps)
 
+
+
     # ── Step 2: frame rendering ───────────────────────────────────────────────
-    from video.src.renderer import render_frames, render_frames_quick
+    from video.src.renderer import render_frames, render_frames_quick, quick_render
 
     frames_dir = Path("temp/frames")
 
     if quick:
         print("Using quick renderer (faster, simpler visuals)…")
-        render_frames_quick(amp_file, frames_dir, width, height)
+        #render_frames_quick(amp_file, frames_dir, width, height)
+        output_mp4 = Path("output") / (mp3_path.stem + ".mp4")
+        quick_render(amp_file, mp3_path, output_mp4, width, height, logo_path)
+        return
     else:
         # Import the visual tuning defaults so they stay in one place
         from video.src.renderer import (

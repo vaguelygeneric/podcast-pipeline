@@ -18,15 +18,15 @@ def _hex(h: str) -> tuple[int, int, int]:
 
 # ── Site tokens (dark theme) ─────────────────────────────────────────────────
 #    CSS variable       →  value        →  description
-BG          = _hex("#f2f4f0")   # --bg          : deepest background
-BG_ALT      = _hex("#e8ece4")   # --bg-alt      : background gradient midpoint
+BG          = _hex("#141210")   # --bg          : deepest background
+BG_ALT      = _hex("#1e1b18")   # --bg-alt      : background gradient midpoint
 SURFACE     = _hex("#252118")   # --surface     : elevated surface (unused directly)
-BORDER      = _hex("#a0b89a")   # --border      : subtle dividers / quiet rings
-TEXT        = _hex("#141c10")   # --text        : full-brightness text → spark color
+BORDER      = _hex("#352f27")   # --border      : subtle dividers / quiet rings
+TEXT        = _hex("#f0ece3")   # --text        : full-brightness text → spark color
 TEXT_MUTED  = _hex("#9e9588")   # --text-muted  : subdued → dim glow tint
-ACCENT      = _hex("#0e8fa8")   # --accent      : primary indigo → inner ring
-ACCENT_ALT  = _hex("#4a9460")   # --accent-alt  : lighter indigo → mid ring / bars
-ACCENT_BG   = _hex("#ccddc8")   # --accent-bg   : deep violet → glow halo tint
+ACCENT      = _hex("#6366f1")   # --accent      : primary indigo → inner ring
+ACCENT_ALT  = _hex("#818cf8")   # --accent-alt  : lighter indigo → mid ring / bars
+ACCENT_BG   = _hex("#2e1d4f")   # --accent-bg   : deep violet → glow halo tint
 
 # ── Derived video roles ───────────────────────────────────────────────────────
 
