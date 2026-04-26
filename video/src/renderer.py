@@ -212,7 +212,7 @@ def render_frames(
     for k in range(_N_BG_KEYS):
         phase  = math.sin(math.pi * k / (_N_BG_KEYS - 1))   # 0 → 1 → 0
         center = _lerp_color(p.BG_CENTER, p.ACCENT_BG, phase * 0.55)
-        _bg_keyframes.append(_make_bg(width, height, center))
+        _bg_keyframes.append(_make_bg(width, height, p.BG_EDGE, center))
     print(f"  Precomputed {_N_BG_KEYS} background keyframes")
 
     # ── Logo preparation ──────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ def render_frames(
         # Orbit radius grows slightly beyond the bar tips on loud frames
         spark_r = pulse_outer + bar_max * amp * 0.5 + 8
         sparks  = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        _draw_sparks(sparks, cx, cy, spark_r, n_sparks, rotation, amp)
+        _draw_sparks(sparks, cx, cy, spark_r, n_sparks, rotation, amp, p.SPARK_COLOR)
         frame = Image.alpha_composite(frame, sparks)
 
         # ── Layer 5: logo ─────────────────────────────────────────────────────
