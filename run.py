@@ -32,6 +32,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()  # reads .env from cwd
 
+# Theme default imports.
+from video.src.palette import list_themes, DEFAULT_THEME, DEFAULT_MODE
+
+from video.src.renderer import (
+    DEFAULT_RING_SCALE, DEFAULT_N_BARS,
+    DEFAULT_BAR_HEIGHT, DEFAULT_N_SPARKS, DEFAULT_GLOW_BLUR,
+)
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -82,6 +89,31 @@ def parse_args():
     p.add_argument("--fps",        type=int, default=30,
                    help="Video framerate (default: 30)")
 
+    # Video Theme & style options (only matter if --no-video is not set)
+    p.add_argument("--ring-scale", type=float, default=DEFAULT_RING_SCALE,
+                        help=f"Ring size multiplier (default: {DEFAULT_RING_SCALE})")
+    p.add_argument("--n-bars",     type=int,   default=DEFAULT_N_BARS,
+                        help=f"Arc waveform bar count (default: {DEFAULT_N_BARS})")
+    p.add_argument("--bar-height", type=float, default=DEFAULT_BAR_HEIGHT,
+                        help=f"Bar height as fraction of canvas short-edge (default: {DEFAULT_BAR_HEIGHT})")
+    p.add_argument("--n-sparks",   type=int,   default=DEFAULT_N_SPARKS,
+                        help=f"Spark particle count (default: {DEFAULT_N_SPARKS})")
+    p.add_argument("--glow-blur",  type=int,   default=DEFAULT_GLOW_BLUR,
+                        help=f"Glow ring blur radius px (default: {DEFAULT_GLOW_BLUR})")
+    p.add_argument("--style",      default="v2", choices=["v1", "v2"],
+                        help="Renderer style: v1=circular waveform, v2=bottom waveform + freeform particles (default: v2)")
+    p.add_argument("--watermark",         default=None,
+                        help="Path to watermark PNG (shown bottom-right, fades in/out)")
+    p.add_argument("--watermark-opacity", type=float, default=0.35,
+                        help="Steady-state watermark opacity 0.0–1.0 (default: 0.35)")
+    p.add_argument("--watermark-size",    type=float, default=0.08,
+                        help="Watermark height as fraction of canvas height (default: 0.08)")
+    p.add_argument("--watermark-margin",    type=int, default=24,
+                        help="Watermark margin (default: 24)")   
+    p.add_argument("--theme",  default=DEFAULT_THEME,
+                        help=f"Color theme. Available: {", ".join(list_themes())} (default: {DEFAULT_THEME})")
+    p.add_argument("--mode",   default=DEFAULT_MODE, choices=["dark", "light"],
+                        help="Color mode: dark or light (default: dark)")
     return p.parse_args()
 
 
@@ -126,12 +158,24 @@ def main():
     if not args.no_video:
         from pipeline.video import build_video
         print("\n=== Stage 2: Video Generation ===")
-        build_video(
-            mp3_path    = final_audio,
-            logo_path   = Path(args.logo),
-            resolution  = args.resolution,
-            fps         = args.fps,
-            quick       = args.quick_video,
+        build_video(            
+            mp3_path          = final_audio,
+            logo_path         = Path(args.logo),
+            quick             = args.quick_video,
+            ring_scale        = args.ring_scale,
+            resolution        = args.resolution,
+            style             = args.style,
+            n_bars            = args.n_bars,
+            bar_height        = args.bar_height,
+            n_sparks          = args.n_sparks,
+            glow_blur         = args.glow_blur,
+            watermark_path    = Path(args.watermark) if args.watermark else None,
+            watermark_opacity = args.watermark_opacity,
+            watermark_size    = args.watermark_size,
+            fps               = args.fps,
+            theme             = args.theme,
+            mode              = args.mode,
+            watermark_margin  = args.watermark_margin,
         )
 
     # ── Stage 3: Metadata & Jekyll page ──────────────────────────────────────
