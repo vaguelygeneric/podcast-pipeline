@@ -30,13 +30,8 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
+from video.src.palette import load_theme
 
-from video.src.palette import (
-    BG_CENTER, BG_EDGE,
-    RING_INNER, RING_MID, RING_OUTER, RING_BEAT,
-    BAR_COLOR, SPARK_COLOR, GLOW_TINT,
-    ACCENT_BG,
-)
 
 # ── Visual defaults — override via render_frames() kwargs ─────────────────────
 DEFAULT_RING_SCALE = 1.0    # ring size multiplier; 0.5 = compact, 2.0 = huge
@@ -64,7 +59,7 @@ def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
 
 # ── Background ────────────────────────────────────────────────────────────────
 
-def _make_bg(width: int, height: int, center_color: tuple = None) -> Image.Image:
+def _make_bg(width: int, height: int, bg_edge: any, center_color: tuple = None) -> Image.Image:
     """
     Build a radial gradient image: center_color at origin → BG_EDGE at corners.
     Uses numpy for speed; called once per keyframe, not once per frame.
@@ -76,7 +71,7 @@ def _make_bg(width: int, height: int, center_color: tuple = None) -> Image.Image
     ys, xs = np.mgrid[0:height, 0:width]
     # t = 0 at centre, ≈1 at corner
     t = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2) / max_r
-    for ch, (a, b) in enumerate(zip(center, BG_EDGE)):
+    for ch, (a, b) in enumerate(zip(center, bg_edge)):
         arr[:, :, ch] = a * (1 - t) + b * t
     return Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGB")
 
@@ -117,7 +112,7 @@ def _draw_arc_bars(layer, cx, cy, window_amps, ring_r, bar_max, color):
 
 # ── Spark particles ───────────────────────────────────────────────────────────
 
-def _draw_sparks(layer, cx, cy, radius, n_sparks, rotation, amp):
+def _draw_sparks(layer, cx, cy, radius, n_sparks, rotation, amp, spark_color):
     """
     Draw evenly-spaced dot particles on a circle of given radius.
 
@@ -126,7 +121,7 @@ def _draw_sparks(layer, cx, cy, radius, n_sparks, rotation, amp):
     scale with amplitude so sparks flare on loud beats.
     """
     draw    = ImageDraw.Draw(layer)
-    r, g, b = SPARK_COLOR
+    r, g, b = spark_color
     for i in range(n_sparks):
         angle = rotation + (2 * math.pi * i / n_sparks)
         x     = cx + radius * math.cos(angle)
@@ -160,17 +155,27 @@ def _compute_rotation(amplitudes: list, frame_idx: int) -> float:
 # ── Full renderer ─────────────────────────────────────────────────────────────
 
 def render_frames(
-    amplitude_file: Path,
-    output_dir:     Path,
-    width:          int,
-    height:         int,
-    logo_path:      Path = None,
-    ring_scale:     float = DEFAULT_RING_SCALE,
-    n_bars:         int   = DEFAULT_N_BARS,
-    bar_height:     float = DEFAULT_BAR_HEIGHT,
-    n_sparks:       int   = DEFAULT_N_SPARKS,
-    glow_blur:      int   = DEFAULT_GLOW_BLUR,
+    amplitude_file:    Path,
+    output_dir:        Path,
+    width:             int,
+    height:            int,
+    logo_path:         Path ,
+    ring_scale:        float,
+    n_bars:            int  ,
+    bar_height:        float,
+    n_sparks:          int  ,
+    glow_blur:         int  ,
+    watermark_path:    Path ,
+    watermark_opacity: float,
+    watermark_size:    float,
+    watermark_margin:  int  ,
+    fps:               int  ,
+    theme:             str  ,
+    mode:              str  ,
 ):
+        # ── Palette ───────────────────────────────────────────────────────────────
+    p = load_theme(theme, mode)
+    print(f"  Theme: {p}")
     """
     Render all video frames to output_dir/frame_NNNNN.png.
 
@@ -206,7 +211,7 @@ def render_frames(
     _bg_keyframes = []
     for k in range(_N_BG_KEYS):
         phase  = math.sin(math.pi * k / (_N_BG_KEYS - 1))   # 0 → 1 → 0
-        center = _lerp_color(BG_CENTER, ACCENT_BG, phase * 0.55)
+        center = _lerp_color(p.BG_CENTER, p.ACCENT_BG, phase * 0.55)
         _bg_keyframes.append(_make_bg(width, height, center))
     print(f"  Precomputed {_N_BG_KEYS} background keyframes")
 
@@ -252,24 +257,24 @@ def render_frames(
         pulse_outer = r_outer + min_dim * 0.04 * s   * amp
         ring_alpha  = 0.55 + 0.45 * amp
         beat_boost  = 0.40 if is_beat else 0.0
-        hot_color   = RING_BEAT if is_beat else RING_MID
+        hot_color   = p.RING_BEAT if is_beat else p.RING_MID
 
         # ── Layer 1: blurred glow rings ───────────────────────────────────────
         glow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         gd   = ImageDraw.Draw(glow)
-        _draw_ring(gd, cx, cy, pulse_inner, 22, GLOW_TINT,  (ring_alpha + beat_boost) * 0.30)
-        _draw_ring(gd, cx, cy, pulse_inner,  8, RING_INNER,  ring_alpha + beat_boost)
+        _draw_ring(gd, cx, cy, pulse_inner, 22, p.GLOW_TINT,  (ring_alpha + beat_boost) * 0.30)
+        _draw_ring(gd, cx, cy, pulse_inner,  8, p.RING_INNER,  ring_alpha + beat_boost)
         _draw_ring(gd, cx, cy, pulse_mid,   16, hot_color,   ring_alpha * 0.18)
         _draw_ring(gd, cx, cy, pulse_mid,    5, hot_color,   ring_alpha * 0.88)
-        _draw_ring(gd, cx, cy, pulse_outer,  3, RING_OUTER,  ring_alpha * 0.55)
+        _draw_ring(gd, cx, cy, pulse_outer,  3, p.RING_OUTER,  ring_alpha * 0.55)
         frame = Image.alpha_composite(frame, glow.filter(ImageFilter.GaussianBlur(glow_blur)))
 
         # ── Layer 2: sharp ring outlines ──────────────────────────────────────
         rings = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         rd    = ImageDraw.Draw(rings)
-        _draw_ring(rd, cx, cy, pulse_inner, 2, RING_INNER, min(1.0, ring_alpha + beat_boost))
+        _draw_ring(rd, cx, cy, pulse_inner, 2, p.RING_INNER, min(1.0, ring_alpha + beat_boost))
         _draw_ring(rd, cx, cy, pulse_mid,   2, hot_color,  min(1.0, ring_alpha * 0.92))
-        _draw_ring(rd, cx, cy, pulse_outer, 1, RING_OUTER, ring_alpha * 0.65)
+        _draw_ring(rd, cx, cy, pulse_outer, 1, p.RING_OUTER, ring_alpha * 0.65)
         frame = Image.alpha_composite(frame, rings)
 
         # ── Layer 3: arc waveform bars ────────────────────────────────────────
@@ -279,7 +284,7 @@ def render_frames(
         n           = len(amplitudes)
         window_amps = [amplitudes[(i - n_bars + 1 + j) % n] for j in range(n_bars)]
         bars        = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        _draw_arc_bars(bars, cx, cy, window_amps, pulse_outer, bar_max, BAR_COLOR)
+        _draw_arc_bars(bars, cx, cy, window_amps, pulse_outer, bar_max, p.BAR_COLOR)
         frame = Image.alpha_composite(frame, bars)
 
         # ── Layer 4: spark particles ──────────────────────────────────────────
@@ -409,94 +414,95 @@ def render_frames_quick(
         frame.convert("RGB").save(output_dir / f"frame_{i:05d}.png")
 
 
-def quick_render(
-    amplitude_file: Path,
-    audio_file:     Path,
-    output_file:    Path,
-    width:          int,
-    height:         int,
-    logo_path:      Path | None = None,
-    fps:            int = 30,
-):
-    """
-    Fast FFmpeg-based renderer.
+# def quick_render(
+#     amplitude_file: Path,
+#     audio_file:     Path,
+#     output_file:    Path,
+#     width:          int,
+#     height:         int,
+#     logo_path:      Path | None = None,
+#     fps:            int = 30,
+# ):
+#     """
+#     Fast FFmpeg-based renderer.
 
-    - No frame generation
-    - Uses showspectrum for audio visualization
-    - Optional centered logo
-    - Palette-driven colors
-    """
+#     - No frame generation
+#     - Uses showspectrum for audio visualization
+#     - Optional centered logo
+#     - Palette-driven colors
+#     """
+#     p = load_theme(theme, mode)
+#     print(f"  Theme: {p}")
+#     # ── Load amplitudes just to get duration ────────────────────────────────
+#     with open(amplitude_file) as f:
+#         amplitudes = json.load(f)
 
-    # ── Load amplitudes just to get duration ────────────────────────────────
-    with open(amplitude_file) as f:
-        amplitudes = json.load(f)
+#     duration = len(amplitudes) / fps
 
-    duration = len(amplitudes) / fps
+#     bg_hex   = _rgb_to_hex(BG_CENTER)
+#     bar_hex  = _rgb_to_hex(BAR_COLOR)
 
-    bg_hex   = _rgb_to_hex(BG_CENTER)
-    bar_hex  = _rgb_to_hex(BAR_COLOR)
+#     # ── Inputs ─────────────────────────────────────────────────────────────
+#     cmd = [
+#         "ffmpeg",
+#         "-y",
 
-    # ── Inputs ─────────────────────────────────────────────────────────────
-    cmd = [
-        "ffmpeg",
-        "-y",
+#         # Audio
+#         "-i", str(audio_file),
 
-        # Audio
-        "-i", str(audio_file),
+#         # Background (generated color)
+#         "-f", "lavfi",
+#         "-i", f"color=c={bg_hex}:s={width}x{height}:d={duration}",
+#     ]
 
-        # Background (generated color)
-        "-f", "lavfi",
-        "-i", f"color=c={bg_hex}:s={width}x{height}:d={duration}",
-    ]
+#     if logo_path:
+#         cmd += ["-i", str(logo_path)]
 
-    if logo_path:
-        cmd += ["-i", str(logo_path)]
+#     # ── Filter graph ───────────────────────────────────────────────────────
+#     filter_parts = []
 
-    # ── Filter graph ───────────────────────────────────────────────────────
-    filter_parts = []
+#     bar_hex = _rgb_to_hex(BAR_COLOR)
+#     logo_h = int(height * 0.25)
 
-    bar_hex = _rgb_to_hex(BAR_COLOR)
-    logo_h = int(height * 0.25)
+#     filter_parts = [
+#         # Waveform
+#         f"[0:a]showwaves="
+#         f"s={width}x{height}:"
+#         f"mode=cline:"
+#         f"rate={fps}:"
+#         f"colors={bar_hex}"
+#         f"[wave]",
 
-    filter_parts = [
-        # Waveform
-        f"[0:a]showwaves="
-        f"s={width}x{height}:"
-        f"mode=cline:"
-        f"rate={fps}:"
-        f"colors={bar_hex}"
-        f"[wave]",
+#         # Glow + transparency
+#         "[wave]format=rgba,gblur=sigma=2,colorchannelmixer=aa=0.6[wavea]",
 
-        # Glow + transparency
-        "[wave]format=rgba,gblur=sigma=2,colorchannelmixer=aa=0.6[wavea]",
+#         # Overlay waveform on background
+#         "[1:v][wavea]overlay=0:0[bg]",
+#     ]
 
-        # Overlay waveform on background
-        "[1:v][wavea]overlay=0:0[bg]",
-    ]
+#     if logo_path:
+#         filter_parts += [
+#             f"[2:v]scale=-1:{logo_h}[logo]",
+#             "[bg][logo]overlay=(W-w)/2:(H-h)/2[outv]",
+#         ]
+#         map_video = "[outv]"
+#     else:
+#         map_video = "[bg]"
 
-    if logo_path:
-        filter_parts += [
-            f"[2:v]scale=-1:{logo_h}[logo]",
-            "[bg][logo]overlay=(W-w)/2:(H-h)/2[outv]",
-        ]
-        map_video = "[outv]"
-    else:
-        map_video = "[bg]"
+#     filter_complex = ";".join(filter_parts)
 
-    filter_complex = ";".join(filter_parts)
+#     # ── Final command ──────────────────────────────────────────────────────
+#     cmd += [
+#         "-filter_complex", filter_complex,
+#         "-map", map_video,
+#         "-map", "0:a",
+#         "-c:v", "libx264",
+#         "-pix_fmt", "yuv420p",
+#         "-shortest",
+#         str(output_file),
+#     ]
 
-    # ── Final command ──────────────────────────────────────────────────────
-    cmd += [
-        "-filter_complex", filter_complex,
-        "-map", map_video,
-        "-map", "0:a",
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-shortest",
-        str(output_file),
-    ]
+#     print("Running FFmpeg quick render...")
+#     subprocess.run(cmd, check=True)
 
-    print("Running FFmpeg quick render...")
-    subprocess.run(cmd, check=True)
-
-    print(f"Quick render complete → {output_file}")
+#     print(f"Quick render complete → {output_file}")

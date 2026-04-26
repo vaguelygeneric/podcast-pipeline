@@ -19,8 +19,20 @@ def build_video(
     mp3_path:   Path,
     logo_path:  Path,
     quick:      bool,
-    resolution: str = "1280x720",
-    fps:        int = 30,
+    resolution: str,
+    fps:        int,
+    style:      str,
+    theme:             str,
+    mode:              str,
+    ring_scale:        float,
+    n_bars:            int,
+    bar_height:        float,
+    n_sparks:          int,
+    glow_blur:         int,
+    watermark_path:    Path,
+    watermark_opacity: float,
+    watermark_size:    float,
+    watermark_margin:  int,
 ):
     """
     Full video build:
@@ -51,34 +63,41 @@ def build_video(
 
 
     # ── Step 2: frame rendering ───────────────────────────────────────────────
-    from video.src.renderer import render_frames, render_frames_quick, quick_render
-    from video.src.renderer_v2 import render_frames
+    # from video.src.renderer import quick_render
+    
     frames_dir = Path("temp/frames")
 
     if quick:
         print("Using quick renderer (faster, simpler visuals)…")
         #render_frames_quick(amp_file, frames_dir, width, height)
-        output_mp4 = Path("output") / (mp3_path.stem + ".mp4")
-        quick_render(amp_file, mp3_path, output_mp4, width, height, logo_path)
+        # output_mp4 = Path("output") / (mp3_path.stem + ".mp4")
+        # quick_render(amp_file, mp3_path, output_mp4, width, height, logo_path)
+
+        print("====== Quick renderer is not yet implemented with themes. Skipping video generation. ======")
         return
     else:
+        from video.src.renderer import render_frames as render_frames_v1
+        from video.src.renderer_v2 import render_frames as render_frames_v2
+        # Pick rendering version
+        render_frames_fn = render_frames_v2 if style == 'v2' else render_frames_v1
         # Import the visual tuning defaults so they stay in one place
-        from video.src.renderer import (
-            DEFAULT_RING_SCALE, DEFAULT_N_BARS,
-            DEFAULT_BAR_HEIGHT, DEFAULT_N_SPARKS, DEFAULT_GLOW_BLUR,
-        )
+
         print("Using full renderer…")
-        render_frames(
-            amplitude_file = amp_file,
-            output_dir     = frames_dir,
-            width          = width,
-            height         = height,
-            logo_path      = logo_path,
-            ring_scale     = DEFAULT_RING_SCALE,
-            n_bars         = DEFAULT_N_BARS,
-            bar_height     = DEFAULT_BAR_HEIGHT,
-            n_sparks       = DEFAULT_N_SPARKS,
-            glow_blur      = DEFAULT_GLOW_BLUR,
+        render_frames_fn(
+            amp_file, frames_dir, width, height,
+            logo_path         = logo_path,
+            ring_scale        = ring_scale,
+            n_bars            = n_bars,
+            bar_height        = bar_height,
+            n_sparks          = n_sparks,
+            glow_blur         = glow_blur,
+            watermark_path    = watermark_path,
+            watermark_opacity = watermark_opacity,
+            watermark_size    = watermark_size,
+            watermark_margin  = watermark_margin,
+            fps               = fps,
+            theme             = theme,
+            mode              = mode,
         )
 
     # ── Step 3: mux frames + audio into mp4 ──────────────────────────────────

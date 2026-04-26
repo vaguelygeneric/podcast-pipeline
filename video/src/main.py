@@ -3,7 +3,8 @@
 import subprocess
 from pathlib import Path
 import argparse
-from audio import extract_amplitude
+from audio_analysis import extract_amplitude
+from palette import list_themes, DEFAULT_THEME, DEFAULT_MODE
 from renderer import (
     render_frames as render_frames_v1,
     render_frames_quick,
@@ -58,6 +59,10 @@ def main():
                         help="Steady-state watermark opacity 0.0–1.0 (default: 0.35)")
     parser.add_argument("--watermark-size",    type=float, default=0.08,
                         help="Watermark height as fraction of canvas height (default: 0.08)")
+    parser.add_argument("--theme",  default=DEFAULT_THEME,
+                        help=f"Color theme. Available: {", ".join(list_themes())} (default: {DEFAULT_THEME})")
+    parser.add_argument("--mode",   default=DEFAULT_MODE, choices=["dark", "light"],
+                        help="Color mode: dark or light (default: dark)")
     parser.add_argument("--quick", action="store_true",
                         help="Use faster rendering method (default: true)")
     args = parser.parse_args()
@@ -98,6 +103,8 @@ def main():
             watermark_opacity = args.watermark_opacity,
             watermark_size    = args.watermark_size,
             fps               = args.fps,
+            theme             = args.theme,
+            mode              = args.mode,
         )
 
     render_video(input_mp3, output_mp4, args.fps)
