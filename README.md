@@ -48,7 +48,11 @@ podcast-pipeline/
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/vaguelygeneric/podcast-pipeline.git
+or
+git clone git@github.com:vaguelygeneric/podcast-pipeline.git
+
+cd podcast-pipeline
 ```
 
 Make sure `ffmpeg` is on your PATH.
