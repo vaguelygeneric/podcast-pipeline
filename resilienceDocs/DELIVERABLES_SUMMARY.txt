@@ -1,0 +1,316 @@
+## Podcast Pipeline Resilience Improvements — Complete Solution
+
+### 📦 Deliverables
+
+```
+resilience.py (430 lines)
+├── RetryableError, PermanentError
+├── @retry_with_backoff() decorator
+├── CircuitBreaker class
+├── FailureLog class
+└── Configuration presets
+
+publish_improved.py (380 lines)
+├── upload_to_archive() — with retries
+├── upload_to_buzzsprout() — with retries
+├── generate_markdown() — graceful failure
+└── Helpers (unchanged)
+
+run_improved.py (320 lines)
+├── Better error handling
+├── Graceful degradation
+├── Detailed reporting
+└── Failure logging integration
+
+retry_failed.py (240 lines)
+├── List failures
+├── Retry specific/all
+├── Filter by service
+└── Clear logs
+
+Documentation (40KB)
+├── README_RESILIENCE.md — Overview
+├── INTEGRATION_GUIDE.md — Step-by-step integration
+├── RESILIENCE_GUIDE.md — Architecture & config
+└── BEFORE_AND_AFTER.md — Comparisons
+```
+
+### 🔄 How It All Works Together
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ run_improved.py                                             │
+│ (Pipeline orchestrator)                                     │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ pipeline.audio                                              │
+│ (Audio processing - unchanged)                              │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ pipeline.video                                              │
+│ (Video generation - unchanged)                              │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ publish_improved.py (IMPROVED)                              │
+│                                                              │
+│  upload_to_archive()                                        │
+│      ↓                                                       │
+│  CircuitBreaker.call() ─→ CircuitBreakerOpen? ─→ LOG       │
+│      ↓                                                       │
+│  @retry_with_backoff() ─→ RetryableError? ─→ RETRY (max 8) │
+│      ↓                                                       │
+│  Success ─→ return identifier                              │
+│      ↓                                                       │
+│  Fail ─→ failure_log.record() ─→ return None              │
+│                                                              │
+│  upload_to_buzzsprout()                                     │
+│      ↓                                                       │
+│  (same pattern with 6 retries)                             │
+│                                                              │
+│  generate_markdown()                                        │
+│      ↓                                                       │
+│  (handles None identifier gracefully)                      │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ resilience.py (CORE)                                        │
+│                                                              │
+│  FailureLog:                                                │
+│  .failures/YYYY-MM-DD.json                                 │
+│  {timestamp, service, operation, error, context, stacktrace}│
+│                                                              │
+│  CircuitBreaker: CLOSED/OPEN/HALF_OPEN                     │
+│  Tracks failures, prevents cascading                       │
+│                                                              │
+│  Retry: exponential backoff 2s → 4s → 8s → ...            │
+│  Archive: up to 8 attempts, 3-180s delays                 │
+│  Buzzsprout: up to 6 attempts, 2-120s delays              │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ retry_failed.py                                             │
+│ (Recovery utility - run when needed)                        │
+│                                                              │
+│  python retry_failed.py --list                             │
+│  python retry_failed.py --retry 0                          │
+│  python retry_failed.py --retry-all --service archive.org  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 📊 Error Handling Flow
+
+```
+API Call
+  ↓
+  ├─→ Success ✓
+  │   └─→ CircuitBreaker.CLOSED
+  │       failure_count = 0
+  │
+  └─→ Failure ✗
+      ↓
+      ├─→ Network timeout
+      │   └─→ RetryableError
+      │       ├─→ if attempts < max: sleep + retry
+      │       └─→ if attempts == max: log to .failures/
+      │
+      ├─→ Rate limit (429)
+      │   └─→ RetryableError
+      │       └─→ (same as above)
+      │
+      ├─→ Server error (5xx)
+      │   └─→ RetryableError
+      │       └─→ (same as above)
+      │
+      └─→ Permanent error (401, 404, validation)
+          ├─→ PermanentError
+          ├─→ Fail immediately (no retries)
+          └─→ Log to .failures/
+```
+
+### 🔧 Integration Steps
+
+```
+1. Copy files to project
+   │
+   ├─ cp resilience.py pipeline/
+   ├─ cp publish_improved.py pipeline/publish.py
+   ├─ cp run_improved.py run.py (optional)
+   └─ cp retry_failed.py .
+
+2. Test
+   │
+   ├─ python run.py ... --no-upload (safest)
+   └─ python run.py ... --archive (with uploads)
+
+3. Monitor
+   │
+   ├─ python retry_failed.py --list
+   └─ Check .failures/YYYY-MM-DD.json
+
+4. Recover
+   │
+   ├─ python retry_failed.py --retry 0 (retry one)
+   └─ python retry_failed.py --retry-all (retry all)
+```
+
+### 💡 Key Improvements
+
+#### Before (Original)
+```python
+# One attempt, crashes on any error
+def upload_to_archive(...):
+    from internetarchive import upload
+    upload(identifier, files=[str(file)], ...)  # Fail → crash
+    return identifier
+```
+
+#### After (Improved)
+```python
+@retry_with_backoff(ARCHIVE_RETRY_CONFIG)  # Retry up to 8 times
+def _upload_to_archive_impl(...):
+    upload(identifier, files=[str(file)], ...)
+
+def upload_to_archive(...):
+    try:
+        return archive_breaker.call(_upload_to_archive_impl, ...)
+    except Exception as e:
+        failure_log.record_failure(...)  # Log for recovery
+        return None  # Continue, don't crash
+```
+
+**Result:** Transient failures retry automatically. Permanent failures fail fast. All failures logged.
+
+### 📈 Retry Strategy
+
+**Archive.org** (unstable, slow):
+```
+Attempts: 8
+Delays: 3s → 6s → 12s → 24s → 48s → 96s → 120s → 120s
+Total: ~390 seconds (6.5 minutes worst case)
+```
+
+**Buzzsprout** (more reliable):
+```
+Attempts: 6
+Delays: 2s → 4s → 8s → 16s → 32s → 64s
+Total: ~130 seconds worst case
+```
+
+**Permanent errors** (invalid input, auth):
+```
+Attempts: 1 (fail immediately, no retry)
+```
+
+### 🚨 Circuit Breaker
+
+**State Machine:**
+```
+CLOSED
+  ↓ (3 failures)
+OPEN (stop trying)
+  ↓ (wait 10 min)
+HALF_OPEN (test recovery)
+  ├─ Success → CLOSED (resume)
+  └─ Failure → OPEN (try again in 10 min)
+```
+
+**Benefit:** Prevents hammering down API repeatedly.
+
+### 📝 Failure Log Structure
+
+```json
+.failures/2024-04-27.json
+[
+  {
+    "timestamp": "2024-04-27T14:32:10.123456",
+    "service": "archive.org",
+    "operation": "upload_episode",
+    "error": "HTTP 503: Service Unavailable",
+    "context": {
+      "file": "output/mypodcast_ep0042.mp3",
+      "episode": 42,
+      "show": "mypodcast",
+      "title": "My Title"
+    },
+    "stacktrace": "Traceback (most recent call last):\n  ..."
+  },
+  ...
+]
+```
+
+### 🎯 What Gets Fixed
+
+| Problem | Old Behavior | New Behavior |
+|---------|--------------|--------------|
+| **Archive.org timeout** | Crash | Retry 8×, log failure |
+| **Buzzsprout rate limit (429)** | Crash | Retry 6×, log failure |
+| **Missing credentials (401)** | Crash (after retries) | Fail fast (no retries) |
+| **API down (circuit breaker)** | Hammer API 10+ times | Breaker opens after 3 failures |
+| **Upload fails** | Stop entire pipeline | Log failure, continue pipeline |
+| **Recover failed upload** | Re-run entire pipeline | `python retry_failed.py --retry 0` |
+
+### 📚 Documentation Files
+
+```
+README_RESILIENCE.md (11KB)
+├─ Overview & quick start
+├─ What's included
+├─ Scenarios & examples
+└─ Troubleshooting
+
+INTEGRATION_GUIDE.md (10KB)
+├─ Step-by-step integration
+├─ File-by-file changes
+├─ Testing checklist
+└─ Backward compatibility
+
+RESILIENCE_GUIDE.md (9KB)
+├─ Detailed architecture
+├─ Configuration options
+├─ Monitoring production
+└─ Future enhancements
+
+BEFORE_AND_AFTER.md (9KB)
+├─ Concrete examples
+├─ Code comparisons
+├─ Performance impact
+└─ Test scenarios
+```
+
+### 🚀 Next Steps
+
+1. **Read README_RESILIENCE.md** ← Start here
+2. **Read INTEGRATION_GUIDE.md** ← Then this
+3. **Copy files** to your project
+4. **Test** with `--no-upload` first
+5. **Monitor** `.failures/` in production
+6. **Retry** with `retry_failed.py` when needed
+
+### ✅ Checklist
+
+- [ ] Read documentation
+- [ ] Copy resilience.py to pipeline/
+- [ ] Update pipeline/publish.py
+- [ ] (Optional) Update run.py
+- [ ] Copy retry_failed.py
+- [ ] Test without uploads
+- [ ] Test with uploads
+- [ ] Verify .failures/ logging
+- [ ] Test retry utility
+- [ ] Deploy with confidence
+
+### 💪 You're All Set!
+
+Your podcast pipeline is now **resilient to API failures**. No more crashes when archive.org times out or Buzzsprout rate-limits you.
+
+**Key benefits:**
+✓ Automatic retries with backoff
+✓ Graceful failure handling
+✓ Manual recovery without re-running
+✓ Detailed logging for debugging
+✓ Prevents cascading failures
+
+**Good luck! 🎉**

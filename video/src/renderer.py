@@ -414,95 +414,95 @@ def render_frames_quick(
         frame.convert("RGB").save(output_dir / f"frame_{i:05d}.png")
 
 
-# def quick_render(
-#     amplitude_file: Path,
-#     audio_file:     Path,
-#     output_file:    Path,
-#     width:          int,
-#     height:         int,
-#     logo_path:      Path | None = None,
-#     fps:            int = 30,
-# ):
-#     """
-#     Fast FFmpeg-based renderer.
+def quick_render(
+    amplitude_file: Path,
+    audio_file:     Path,
+    output_file:    Path,
+    width:          int,
+    height:         int,
+    logo_path:      Path | None = None,
+    fps:            int = 30,
+):
+    """
+    Fast FFmpeg-based renderer.
 
-#     - No frame generation
-#     - Uses showspectrum for audio visualization
-#     - Optional centered logo
-#     - Palette-driven colors
-#     """
-#     p = load_theme(theme, mode)
-#     print(f"  Theme: {p}")
-#     # ── Load amplitudes just to get duration ────────────────────────────────
-#     with open(amplitude_file) as f:
-#         amplitudes = json.load(f)
+    - No frame generation
+    - Uses showspectrum for audio visualization
+    - Optional centered logo
+    - Palette-driven colors
+    """
+    p = load_theme(theme, mode)
+    print(f"  Theme: {p}")
+    # ── Load amplitudes just to get duration ────────────────────────────────
+    with open(amplitude_file) as f:
+        amplitudes = json.load(f)
 
-#     duration = len(amplitudes) / fps
+    duration = len(amplitudes) / fps
 
-#     bg_hex   = _rgb_to_hex(BG_CENTER)
-#     bar_hex  = _rgb_to_hex(BAR_COLOR)
+    bg_hex   = _rgb_to_hex(BG_CENTER)
+    bar_hex  = _rgb_to_hex(BAR_COLOR)
 
-#     # ── Inputs ─────────────────────────────────────────────────────────────
-#     cmd = [
-#         "ffmpeg",
-#         "-y",
+    # ── Inputs ─────────────────────────────────────────────────────────────
+    cmd = [
+        "ffmpeg",
+        "-y",
 
-#         # Audio
-#         "-i", str(audio_file),
+        # Audio
+        "-i", str(audio_file),
 
-#         # Background (generated color)
-#         "-f", "lavfi",
-#         "-i", f"color=c={bg_hex}:s={width}x{height}:d={duration}",
-#     ]
+        # Background (generated color)
+        "-f", "lavfi",
+        "-i", f"color=c={bg_hex}:s={width}x{height}:d={duration}",
+    ]
 
-#     if logo_path:
-#         cmd += ["-i", str(logo_path)]
+    if logo_path:
+        cmd += ["-i", str(logo_path)]
 
-#     # ── Filter graph ───────────────────────────────────────────────────────
-#     filter_parts = []
+    # ── Filter graph ───────────────────────────────────────────────────────
+    filter_parts = []
 
-#     bar_hex = _rgb_to_hex(BAR_COLOR)
-#     logo_h = int(height * 0.25)
+    bar_hex = _rgb_to_hex(BAR_COLOR)
+    logo_h = int(height * 0.25)
 
-#     filter_parts = [
-#         # Waveform
-#         f"[0:a]showwaves="
-#         f"s={width}x{height}:"
-#         f"mode=cline:"
-#         f"rate={fps}:"
-#         f"colors={bar_hex}"
-#         f"[wave]",
+    filter_parts = [
+        # Waveform
+        f"[0:a]showwaves="
+        f"s={width}x{height}:"
+        f"mode=cline:"
+        f"rate={fps}:"
+        f"colors={bar_hex}"
+        f"[wave]",
 
-#         # Glow + transparency
-#         "[wave]format=rgba,gblur=sigma=2,colorchannelmixer=aa=0.6[wavea]",
+        # Glow + transparency
+        "[wave]format=rgba,gblur=sigma=2,colorchannelmixer=aa=0.6[wavea]",
 
-#         # Overlay waveform on background
-#         "[1:v][wavea]overlay=0:0[bg]",
-#     ]
+        # Overlay waveform on background
+        "[1:v][wavea]overlay=0:0[bg]",
+    ]
 
-#     if logo_path:
-#         filter_parts += [
-#             f"[2:v]scale=-1:{logo_h}[logo]",
-#             "[bg][logo]overlay=(W-w)/2:(H-h)/2[outv]",
-#         ]
-#         map_video = "[outv]"
-#     else:
-#         map_video = "[bg]"
+    if logo_path:
+        filter_parts += [
+            f"[2:v]scale=-1:{logo_h}[logo]",
+            "[bg][logo]overlay=(W-w)/2:(H-h)/2[outv]",
+        ]
+        map_video = "[outv]"
+    else:
+        map_video = "[bg]"
 
-#     filter_complex = ";".join(filter_parts)
+    filter_complex = ";".join(filter_parts)
 
-#     # ── Final command ──────────────────────────────────────────────────────
-#     cmd += [
-#         "-filter_complex", filter_complex,
-#         "-map", map_video,
-#         "-map", "0:a",
-#         "-c:v", "libx264",
-#         "-pix_fmt", "yuv420p",
-#         "-shortest",
-#         str(output_file),
-#     ]
+    # ── Final command ──────────────────────────────────────────────────────
+    cmd += [
+        "-filter_complex", filter_complex,
+        "-map", map_video,
+        "-map", "0:a",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-shortest",
+        str(output_file),
+    ]
 
-#     print("Running FFmpeg quick render...")
-#     subprocess.run(cmd, check=True)
+    print("Running FFmpeg quick render...")
+    subprocess.run(cmd, check=True)
 
-#     print(f"Quick render complete → {output_file}")
+    print(f"Quick render complete → {output_file}")
