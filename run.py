@@ -190,14 +190,14 @@ def main():
 
     if not args.no_upload:
         print("\n=== Stage 4: Uploads ===")
-
+        upload_description = f"{args.desc} - https://vaguelygeneric.website/podcast/{args.show}/{args.ep:04d}/"
         if args.archive:
             from pipeline.publish import upload_to_archive
             identifier = upload_to_archive(
                 file        = final_audio,
                 ep_num      = args.ep,
                 title       = title,
-                description = args.desc,
+                description = upload_description,
                 date        = date,
                 show        = args.show,
                 test        = args.test_upload,
@@ -208,7 +208,7 @@ def main():
             upload_to_buzzsprout(
                 file        = final_audio,
                 title       = title,
-                description = args.desc,
+                description = upload_description,
                 date        = date,
                 ep_num      = args.ep,
             )
