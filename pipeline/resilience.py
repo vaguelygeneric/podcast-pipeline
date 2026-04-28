@@ -99,17 +99,17 @@ DEFAULT_RETRY_CONFIG = RetryConfig()
 
 # Aggressive retries for unstable services (archive.org, buzzsprout)
 ARCHIVE_RETRY_CONFIG = RetryConfig(
-    max_attempts=8,
+    max_attempts=3,
     initial_delay_sec=3,
     max_delay_sec=180,
-    backoff_factor=2.0,
+    backoff_factor=10.0,
 )
 
 BUZZSPROUT_RETRY_CONFIG = RetryConfig(
-    max_attempts=6,
+    max_attempts=3,
     initial_delay_sec=2,
     max_delay_sec=120,
-    backoff_factor=2.0,
+    backoff_factor=10.0,
 )
 
 
