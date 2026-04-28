@@ -85,6 +85,7 @@ def parse_args():
                    help="Skip video generation")
     p.add_argument("--no-upload", action="store_true",
                    help="Skip all platform uploads (still writes local files)")
+    p.add_argument("--no-jekyll", action="store_true",)
 
     # ── Upload targets (only matter if --no-upload is not set) ───────────────
     p.add_argument("--archive",    action="store_true",
@@ -302,23 +303,28 @@ def main():
         results["buzzsprout"] = "skipped"
 
     # ── Generate Jekyll page (always) ────────────────────────────────────────
-    try:
-        md_path = generate_markdown(
-            ep          = args.ep,
-            show        = args.show,
-            title       = title,
-            description = args.desc,
-            duration    = duration,
-            audio_size  = size,
-            date        = date,
-            identifier  = archive_identifier,
-        )
-        results["jekyll"] = "success"
-        logger.info(f"[OK] Jekyll page: {md_path}")
-    except Exception as e:
-        logger.error(f"[FAIL] Jekyll page generation failed: {e}")
-        results["jekyll"] = f"error: {e}"
-        results["failures"].append(("jekyll", str(e)))
+    if not args.no_jekyll:
+        try:
+            md_path = generate_markdown(
+                ep          = args.ep,
+                show        = args.show,
+                title       = title,
+                description = args.desc,
+                duration    = duration,
+                audio_size  = size,
+                date        = date,
+                identifier  = archive_identifier,
+            )
+            results["jekyll"] = "success"
+            logger.info(f"[OK] Jekyll page: {md_path}")
+        except Exception as e:
+            logger.error(f"[FAIL] Jekyll page generation failed: {e}")
+            results["jekyll"] = f"error: {e}"
+            results["failures"].append(("jekyll", str(e)))
+    else:
+        logger.info("[SKIP] Jekyll page generation")
+        md_path = None
+        results["jekyll"] = "skipped"
 
     # ── Summary ───────────────────────────────────────────────────────────────
     logger.info("\n" + "="*70)
