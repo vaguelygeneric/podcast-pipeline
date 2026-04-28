@@ -147,8 +147,6 @@ def _upload_to_archive_impl(
             metadata=metadata,
             access_key=access_key,
             secret_key=secret_key,
-            access_list=[],
-            retries=1,  # internetarchive's internal retry (we do our own above)
         )
         logger.info(f"Successfully uploaded to Internet Archive: {identifier}")
         return identifier
