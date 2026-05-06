@@ -59,7 +59,6 @@ def parse_date_from_filename(filename: str) -> datetime:
         return datetime.today()
     return datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
 
-
 def get_duration(file: Path) -> str:
     """
     Return a human-readable duration string ("MM:SS") using ffprobe.
@@ -403,6 +402,7 @@ show: {show}
 title: "{title}"
 description: "{meta_desc}"
 date: {date.date()}
+publish_date: {date.isoformat()}
 episode_number: {ep}
 duration: "{duration}"
 audio_url: "{final_audio_url}"
