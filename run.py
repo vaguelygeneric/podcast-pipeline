@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run.py — Single entry point for the podcast pipeline (IMPROVED VERSION).
+run.py — Single entry point for the podcast pipeline.
 
 Handles the full publish workflow in sequence:
   1. Audio cleanup & loudness normalization  (m4a → mp3)
@@ -31,15 +31,64 @@ Usage examples are in README.md, but quick reference:
 
   # Generate video from an already-processed mp3
   python run.py output/mypodcast_ep0042.mp3 --ep 42 --show mypodcast --desc "..." --no-audio --no-upload
+  
+───────────────────────────────────────────────────────────────────────────────
+EPISODE HISTORY / AUTO-NUMBERING SYSTEM
+───────────────────────────────────────────────────────────────────────────────
+
+This pipeline maintains a persistent history file at:
+
+    .files/history.json
+
+The history file is used to:
+
+  • Automatically assign episode numbers
+  • Prevent accidental duplicate uploads
+  • Detect skipped or out-of-order episodes
+  • Preserve archive.org identifiers for future recovery/debugging
+
+WHY THIS EXISTS:
+
+A common failure mode is accidentally uploading the wrong episode number,
+which creates a permanent archive.org identifier such as:
+
+    daily_ep0019
+
+Even if the upload is deleted later, the identifier may remain reserved,
+causing future uploads to fail or require manual intervention.
+
+To avoid this:
+
+  • Episode numbers are auto-assigned by default
+  • Episode numbers are RESERVED immediately
+  • Reserved numbers are NEVER reused
+  • Manual overrides require confirmation if unexpected
+
+IDs are cheap, permanent, and should never be recycled.
+
+NORMAL USAGE:
+
+    python run.py input.m4a --show daily --desc "..."
+
+MANUAL OVERRIDE:
+
+    python run.py input.m4a --show daily --ep 42 --desc "..."
+
+If a manual override does not match the expected next episode,
+the script warns and requires confirmation.
 """
 
 import argparse
-import sys
+import json
 import logging
+import sys
+import uuid
+
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv()  # reads .env from cwd
+load_dotenv()
 
 # Theme default imports.
 from video.src.palette import list_themes, DEFAULT_THEME, DEFAULT_MODE
@@ -49,104 +98,368 @@ from video.src.renderer import (
     DEFAULT_BAR_HEIGHT, DEFAULT_N_SPARKS, DEFAULT_GLOW_BLUR,
 )
 
-# Setup logging
+# ──────────────────────────────────────────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────────────────────────────────────────
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
+
 logger = logging.getLogger("podcast_pipeline")
 
+# ──────────────────────────────────────────────────────────────────────────────
+# History / Episode Tracking
+# ──────────────────────────────────────────────────────────────────────────────
+
+HISTORY_FILE = Path(".files/history.json")
+
+
+def load_history():
+    """
+    Load the persistent history file.
+
+    History structure:
+
+    {
+      "daily": [
+        {
+          "ep": 18,
+          "status": "reserved",
+          "timestamp": "...",
+          ...
+        }
+      ]
+    }
+
+    We intentionally keep this simple JSON instead of using SQLite because:
+
+      • single-user
+      • append-only
+      • tiny dataset
+      • human-readable
+      • easy to repair manually if needed
+
+    If the file does not exist yet, return an empty dict.
+    """
+
+    HISTORY_FILE.parent.mkdir(exist_ok=True)
+
+    if not HISTORY_FILE.exists():
+        return {}
+
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    except Exception as e:
+        logger.warning(f"Failed to load history file: {e}")
+        return {}
+
+
+def save_history(history):
+    """
+    Atomically write history to disk.
+
+    IMPORTANT:
+    We write to a temporary file first and then replace the real file.
+
+    This prevents corruption if:
+      • the script crashes
+      • power dies
+      • Ctrl+C happens mid-write
+
+    Atomic replace is much safer than writing directly to the target file.
+    """
+
+    HISTORY_FILE.parent.mkdir(exist_ok=True)
+
+    tmp_file = HISTORY_FILE.with_suffix(".tmp")
+
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2)
+
+    tmp_file.replace(HISTORY_FILE)
+
+
+def get_show_history(show: str):
+    """
+    Convenience helper for retrieving a show's history list.
+    """
+
+    history = load_history()
+    return history.get(show, [])
+
+
+def get_next_episode(show: str) -> int:
+    """
+    Determine the next episode number for a show.
+
+    IMPORTANT:
+    We look at ALL reserved episodes, not just successful runs.
+
+    This guarantees episode numbers are never reused.
+
+    Example:
+
+      latest reserved = 18
+      next assigned   = 19
+
+    Even if episode 18 failed halfway through,
+    we still move forward to 19.
+    """
+
+    show_history = get_show_history(show)
+
+    if not show_history:
+        return 1
+
+    latest = max(entry["ep"] for entry in show_history)
+
+    return latest + 1
+
+
+def validate_manual_episode(show: str, ep: int):
+    """
+    Validate a manually provided episode number.
+
+    This only runs when the user explicitly passes --ep.
+
+    If the provided episode does not match the expected next episode,
+    the script warns and asks for confirmation.
+
+    This protects against:
+      • typos
+      • skipped numbers
+      • duplicate archive uploads
+      • accidental regressions
+    """
+
+    expected = get_next_episode(show)
+
+    if ep != expected:
+        logger.warning(
+            f"\n"
+            f"Expected next episode : {expected:04d}\n"
+            f"Provided episode      : {ep:04d}\n"
+        )
+
+        response = input("Continue anyway? [y/N]: ").strip().lower()
+
+        if response not in ("y", "yes"):
+            logger.info("Aborted by user.")
+            sys.exit(1)
+
+
+def reserve_episode(args):
+    """
+    Reserve an episode number IMMEDIATELY.
+
+    We reserve BEFORE uploads happen.
+
+    Because archive.org identifiers become effectively permanent.
+
+    If we only saved successful runs, then:
+      • a failed upload
+      • a partial upload
+      • a Ctrl+C
+      • or a crash
+
+    could accidentally reuse episode numbers later.
+
+    Reusing episode numbers is dangerous.
+    Skipping episode numbers is harmless for now.
+
+    Therefore:
+      • IDs are consumed permanently
+      • gaps are acceptable
+      • reuse is forbidden
+
+    """
+
+    history = load_history()
+
+    show_history = history.setdefault(args.show, [])
+
+    entry = {
+        "run_id": str(uuid.uuid4()),
+        "ep": args.ep,
+        "status": "reserved",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "input": str(args.input),
+        "args": vars(args),
+    }
+
+    show_history.append(entry)
+
+    show_history.sort(key=lambda x: x["ep"])
+
+    save_history(history)
+
+    logger.info(
+        f"Reserved episode {args.show} #{args.ep:04d}"
+    )
+
+
+def finalize_episode(args, archive_identifier=None):
+    """
+    Mark a reserved episode as completed.
+
+    We update the latest matching reservation entry.
+    """
+
+    history = load_history()
+
+    show_history = history.get(args.show, [])
+
+    for entry in reversed(show_history):
+
+        if (
+            entry["ep"] == args.ep and
+            entry["status"] == "reserved"
+        ):
+            entry["status"] = "completed"
+            entry["completed_at"] = datetime.now(timezone.utc).isoformat()
+            entry["archive_identifier"] = archive_identifier
+            break
+
+    save_history(history)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Args
+# ──────────────────────────────────────────────────────────────────────────────
 
 def parse_args():
+
     p = argparse.ArgumentParser(
-        description="Podcast publish pipeline (resilient version)",
+        description="Podcast publish pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
 
-    # ── Required ──────────────────────────────────────────────────────────────
-    p.add_argument("input",
-                   help="Source audio file (.m4a preferred, .mp3 also accepted)")
-    p.add_argument("--ep",   type=int, required=True, help="Episode number")
-    p.add_argument("--show", required=True,           help="Show slug (e.g. 'mypodcast')")
-    p.add_argument("--desc", required=True,           help="Episode description / show notes")
+    # Required
+    p.add_argument(
+        "input",
+        help="Source audio file (.m4a preferred, .mp3 also accepted)"
+    )
 
-    # ── Optional metadata ─────────────────────────────────────────────────────
-    p.add_argument("--title",
-                   help="Episode title (default: 'Episode NNNN')")
-    p.add_argument("--logo",
-                   default=".files/images/logo.png",
-                   help="Logo PNG for video overlay (default: .files/images/logo.png)")
+    p.add_argument(
+        "--show",
+        required=True,
+        help="Show slug (e.g. 'daily')"
+    )
 
-    # ── Stage toggles ─────────────────────────────────────────────────────────
-    p.add_argument("--no-audio",  action="store_true",
-                   help="Skip audio processing (input must already be a clean mp3)")
-    p.add_argument("--no-video",  action="store_true",
-                   help="Skip video generation")
-    p.add_argument("--no-upload", action="store_true",
-                   help="Skip all platform uploads (still writes local files)")
-    p.add_argument("--no-jekyll", action="store_true",)
+    p.add_argument(
+        "--desc",
+        required=True,
+        help="Episode description / show notes"
+    )
 
-    # ── Upload targets (only matter if --no-upload is not set) ───────────────
-    p.add_argument("--archive",    action="store_true",
-                   help="Upload mp3 to Internet Archive")
-    p.add_argument("--buzzsprout", action="store_true",
-                   help="Upload mp3 to Buzzsprout")
-    p.add_argument("--test-upload", action="store_true",
-                   help="Mark Internet Archive upload as [TEST] item")
+    # Optional metadata
+    p.add_argument(
+        "--ep",
+        type=int,
+        help="Episode number (auto-generated if omitted)"
+    )
 
-    # ── Dev / QA modes ────────────────────────────────────────────────────────
-    p.add_argument("--test-audio", action="store_true",
-                   help="Write two audio variants (single-pass and double-pass) for comparison; then exit")
-    p.add_argument("--quick-video", action="store_true",
-                   help="Use the faster (simpler) video renderer")
+    p.add_argument(
+        "--title",
+        help="Episode title (default: 'Episode NNNN')"
+    )
 
-    # ── Video tuning knobs ────────────────────────────────────────────────────
-    p.add_argument("--resolution", default="1280x720",
-                   help="Video resolution WxH (default: 1280x720)")
-    p.add_argument("--fps",        type=int, default=30,
-                   help="Video framerate (default: 30)")
+    p.add_argument(
+        "--logo",
+        default=".files/images/logo.png",
+        help="Logo PNG for video overlay"
+    )
 
-    # Video Theme & style options (only matter if --no-video is not set)
-    p.add_argument("--ring-scale", type=float, default=DEFAULT_RING_SCALE,
-                        help=f"Ring size multiplier (default: {DEFAULT_RING_SCALE})")
-    p.add_argument("--n-bars",     type=int,   default=DEFAULT_N_BARS,
-                        help=f"Arc waveform bar count (default: {DEFAULT_N_BARS})")
-    p.add_argument("--bar-height", type=float, default=DEFAULT_BAR_HEIGHT,
-                        help=f"Bar height as fraction of canvas short-edge (default: {DEFAULT_BAR_HEIGHT})")
-    p.add_argument("--n-sparks",   type=int,   default=DEFAULT_N_SPARKS,
-                        help=f"Spark particle count (default: {DEFAULT_N_SPARKS})")
-    p.add_argument("--glow-blur",  type=int,   default=DEFAULT_GLOW_BLUR,
-                        help=f"Glow ring blur radius px (default: {DEFAULT_GLOW_BLUR})")
-    p.add_argument("--style",      default="v2", choices=["v1", "v2"],
-                        help="Renderer style: v1=circular waveform, v2=bottom waveform + freeform particles (default: v2)")
-    p.add_argument("--watermark",         default=None,
-                        help="Path to watermark PNG (shown bottom-right, fades in/out)")
-    p.add_argument("--watermark-opacity", type=float, default=0.35,
-                        help="Steady-state watermark opacity 0.0–1.0 (default: 0.35)")
-    p.add_argument("--watermark-size",    type=float, default=0.08,
-                        help="Watermark height as fraction of canvas height (default: 0.08)")
-    p.add_argument("--watermark-margin",    type=int, default=24,
-                        help="Watermark margin (default: 24)")   
-    p.add_argument("--theme",  default=DEFAULT_THEME,
-                        help=f"Color theme. Available: {", ".join(list_themes())} (default: {DEFAULT_THEME})")
-    p.add_argument("--mode",   default=DEFAULT_MODE, choices=["dark", "light"],
-                        help="Color mode: dark or light (default: dark)")
+    # Stage toggles
+    p.add_argument("--no-audio", action="store_true")
+    p.add_argument("--no-video", action="store_true")
+    p.add_argument("--no-upload", action="store_true")
+    p.add_argument("--no-jekyll", action="store_true")
+
+    # Uploads
+    p.add_argument("--archive", action="store_true")
+    p.add_argument("--buzzsprout", action="store_true")
+    p.add_argument("--test-upload", action="store_true")
+
+    # QA / Dev
+    p.add_argument("--test-audio", action="store_true")
+    p.add_argument("--quick-video", action="store_true")
+
+    # Video
+    p.add_argument("--resolution", default="1280x720")
+    p.add_argument("--fps", type=int, default=30)
+
+    p.add_argument("--ring-scale", type=float, default=DEFAULT_RING_SCALE)
+    p.add_argument("--n-bars", type=int, default=DEFAULT_N_BARS)
+    p.add_argument("--bar-height", type=float, default=DEFAULT_BAR_HEIGHT)
+    p.add_argument("--n-sparks", type=int, default=DEFAULT_N_SPARKS)
+    p.add_argument("--glow-blur", type=int, default=DEFAULT_GLOW_BLUR)
+
+    p.add_argument(
+        "--style",
+        default="v2",
+        choices=["v1", "v2"]
+    )
+
+    p.add_argument("--watermark", default=None)
+    p.add_argument("--watermark-opacity", type=float, default=0.35)
+    p.add_argument("--watermark-size", type=float, default=0.08)
+    p.add_argument("--watermark-margin", type=int, default=24)
+
+    p.add_argument(
+        "--theme",
+        default=DEFAULT_THEME,
+        help=f"Available: {', '.join(list_themes())}"
+    )
+
+    p.add_argument(
+        "--mode",
+        default=DEFAULT_MODE,
+        choices=["dark", "light"]
+    )
+
     return p.parse_args()
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────────────────────────────────────
+
 def main():
+
     args = parse_args()
 
+    # Auto-assign episode number if omitted.
+    if args.ep is None:
+
+        args.ep = get_next_episode(args.show)
+
+        logger.info(
+            f"Auto-assigned episode: {args.show} #{args.ep:04d}"
+        )
+
+    else:
+        validate_manual_episode(args.show, args.ep)
+
+    # Reserve immediately so episode numbers are never reused.
+    reserve_episode(args)
+
     input_path = Path(args.input)
+
     if not input_path.exists():
         sys.exit(f"Error: input file not found: {input_path}")
 
-    ep_str   = f"{args.ep:04d}"
-    base_name = f"{args.show}_ep{ep_str}"
-    title     = args.title or f"Episode {ep_str}"
+    ep_str = f"{args.ep:04d}"
 
-    # Ensure output dirs exist
+    base_name = f"{args.show}_ep{ep_str}"
+
+    title = args.title or f"Episode {ep_str}"
+
     Path("output").mkdir(exist_ok=True)
     Path("temp").mkdir(exist_ok=True)
 
