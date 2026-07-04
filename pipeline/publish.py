@@ -401,8 +401,8 @@ layout: episode
 show: {show}
 title: "{title}"
 description: "{meta_desc}"
-date: {date.date()}
-publish_date: {date.isoformat()}
+created: {date.isoformat()}
+publish_date: {date.date()}
 episode_number: {ep}
 duration: "{duration}"
 audio_url: "{final_audio_url}"
