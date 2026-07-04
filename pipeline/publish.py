@@ -363,6 +363,7 @@ def generate_markdown(
     duration: str,
     audio_size: int,
     date: datetime,
+    publish_date=None,
     identifier: Optional[str] = None,
     audio_url: Optional[str] = None,
 ) -> Path:
@@ -373,12 +374,21 @@ def generate_markdown(
     description / show notes.
 
     Args:
+        date: recording date/time (drives `created` in front matter)
+        publish_date: release date (drives `publish_date` in front matter).
+            Distinct from `date` to support front-loading — recording
+            several episodes in one sitting but releasing them on a daily
+            cadence. Defaults to date's calendar date if not given, to
+            preserve behavior for any external callers.
         identifier: Internet Archive identifier (for fallback audio_url)
         audio_url: explicit audio URL (takes precedence over identifier)
 
     If both are None, the audio_url field is left empty (Jekyll page still generated).
     This allows the pipeline to continue even if Archive upload failed.
     """
+
+    if publish_date is None:
+        publish_date = date.date()
     ep_str = f"{ep:04d}"
 
     # Build audio URL from identifier or use explicit audio_url
@@ -402,7 +412,7 @@ show: {show}
 title: "{title}"
 description: "{meta_desc}"
 created: {date.isoformat()}
-publish_date: {date.date()}
+publish_date: {publish_date}
 episode_number: {ep}
 duration: "{duration}"
 audio_url: "{final_audio_url}"
