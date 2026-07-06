@@ -880,8 +880,11 @@ def main():
         results["buzzsprout"] = "skipped"
 
     # ── Generate Jekyll page ──────────────────────────────────────────────────
+    website_patch_path = None
+
     if args.jekyll:
         try:
+            from pipeline.publish import generate_website_patch
             md_path = generate_markdown(
                 ep           = args.ep,
                 show         = args.show,
@@ -895,6 +898,9 @@ def main():
             )
             results["jekyll"] = "success"
             logger.info(f"[OK] Jekyll page: {md_path}")
+
+            website_patch_path = generate_website_patch(md_path, args.show, ep_str)
+            logger.info(f"[OK] Website patch: {website_patch_path}")
         except Exception as e:
             logger.error(f"[FAIL] Jekyll page generation failed: {e}")
             results["jekyll"] = f"error: {e}"
@@ -924,6 +930,8 @@ def main():
     logger.info(f"\nFiles generated:")
     logger.info(f"  Audio : {final_audio}")
     logger.info(f"  Jekyll: {md_path}")
+    if website_patch_path:
+        logger.info(f"  Patch : {website_patch_path}")
     if args.video and results["video"] == "success":
         logger.info(f"  Video : output/{Path(final_audio).stem}.mp4")
 

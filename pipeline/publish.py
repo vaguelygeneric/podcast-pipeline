@@ -429,3 +429,52 @@ permalink: /podcast/{show}/{ep_str}/
     path.write_text(front_matter)
     logger.info(f"Jekyll page written: {path}")
     return path
+
+
+def generate_website_patch(md_path: Path, show: str, ep_str: str) -> Path:
+    """
+    Generate a git-apply-compatible patch that adds this episode's Jekyll
+    page to the website repo, at _podcast/<show>/<NNNN>.md.
+
+    This is always a pure "new file" addition — the episode has never
+    existed in the website repo before — so the patch has no dependency
+    on the website repo's current HEAD/branch. Apply it with:
+
+        cd /path/to/website && git apply /path/to/<show>-<NNNN>.patch
+
+    from any commit, as long as that path doesn't already exist there.
+    """
+
+    target_path = f"_podcast/{show}/{ep_str}.md"
+
+    content = md_path.read_text(encoding="utf-8")
+
+    ends_with_newline = content.endswith("\n")
+    lines = content.split("\n")
+
+    if ends_with_newline:
+        lines = lines[:-1]
+
+    body_lines = [f"+{line}" for line in lines]
+
+    if not ends_with_newline:
+        body_lines.append(r"\ No newline at end of file")
+
+    patch_text = "\n".join([
+        f"diff --git a/{target_path} b/{target_path}",
+        "new file mode 100644",
+        "index 0000000..0000000",
+        "--- /dev/null",
+        f"+++ b/{target_path}",
+        f"@@ -0,0 +1,{len(lines)} @@",
+        *body_lines,
+        "",
+    ])
+
+    patch_dir = Path("output/patches")
+    patch_dir.mkdir(parents=True, exist_ok=True)
+
+    patch_path = patch_dir / f"{show}-{ep_str}.patch"
+    patch_path.write_text(patch_text, encoding="utf-8")
+
+    return patch_path
