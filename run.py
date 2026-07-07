@@ -154,6 +154,7 @@ DEFAULT_DEFAULTS = {
     "upload": True,
     "jekyll": True,
     "test_upload": False,
+    "website_repo": "../website",
 }
 
 
@@ -588,6 +589,18 @@ def parse_args():
         help="Logo PNG for video overlay"
     )
 
+    p.add_argument(
+        "--website-repo",
+        dest="website_repo",
+        default=None,
+        help=(
+            "Path to the website repo checkout, used to merge into a "
+            "pre-written episode page instead of generating a plain "
+            "new-file patch. Defaults to .files/defaults.json's "
+            "'website_repo' value ('../website' out of the box)."
+        )
+    )
+
     # Stage toggles — default=None (not True/False) so we can tell whether
     # the person actually passed the flag vs. needs an interactive prompt.
     # Each supports both spellings, e.g. --video / --no-video.
@@ -899,7 +912,10 @@ def main():
             results["jekyll"] = "success"
             logger.info(f"[OK] Jekyll page: {md_path}")
 
-            website_patch_path = generate_website_patch(md_path, args.show, ep_str)
+            website_patch_path = generate_website_patch(
+                md_path, args.show, ep_str,
+                website_repo=args.website_repo or defaults["website_repo"],
+            )
             logger.info(f"[OK] Website patch: {website_patch_path}")
         except Exception as e:
             logger.error(f"[FAIL] Jekyll page generation failed: {e}")

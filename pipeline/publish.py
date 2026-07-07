@@ -25,6 +25,7 @@ RESILIENCE IMPROVEMENTS:
 
 import os
 import re
+import difflib
 import subprocess
 import logging
 from datetime import datetime
@@ -431,45 +432,66 @@ permalink: /podcast/{show}/{ep_str}/
     return path
 
 
-def generate_website_patch(md_path: Path, show: str, ep_str: str) -> Path:
+def generate_website_patch(md_path: Path, show: str, ep_str: str, website_repo=None) -> Path:
     """
-    Generate a git-apply-compatible patch that adds this episode's Jekyll
-    page to the website repo, at _podcast/<show>/<NNNN>.md.
+    Generate a git-apply-compatible patch that adds or updates this
+    episode's Jekyll page in the website repo, at _podcast/<show>/<NNNN>.md.
 
-    This is always a pure "new file" addition — the episode has never
-    existed in the website repo before — so the patch has no dependency
-    on the website repo's current HEAD/branch. Apply it with:
+    Two cases:
 
-        cd /path/to/website && git apply /path/to/<show>-<NNNN>.patch
+    1. The file doesn't exist yet in the website repo (or website_repo
+       isn't configured/found) — plain new-file patch, same as before.
 
-    from any commit, as long as that path doesn't already exist there.
+    2. The file already exists (e.g. show notes pre-written before
+       recording). Rather than overwrite it wholesale, MERGE: front-matter
+       fields the pipeline is authoritative on (created, duration,
+       audio_url, audio_size, audio_type — none of which can be known
+       before the audio exists) are refreshed with fresh values.
+       Everything else pre-written — every other front-matter field, and
+       the entire body — is left untouched. The resulting patch is a real
+       diff against the pre-written file, so it's small, reviewable, and
+       applies cleanly with `git apply` instead of failing because the
+       path already exists.
     """
 
-    target_path = f"_podcast/{show}/{ep_str}.md"
+    target_rel_path = f"_podcast/{show}/{ep_str}.md"
+    new_content = md_path.read_text(encoding="utf-8")
 
-    content = md_path.read_text(encoding="utf-8")
+    existing_path = None
 
-    ends_with_newline = content.endswith("\n")
-    lines = content.split("\n")
+    if website_repo:
+        website_repo_path = Path(website_repo)
 
-    if ends_with_newline:
-        lines = lines[:-1]
+        if website_repo_path.is_dir():
+            candidate = website_repo_path / target_rel_path
+            if candidate.exists():
+                existing_path = candidate
+        else:
+            logger.warning(
+                f"Website repo not found at '{website_repo_path}' — "
+                f"generating a new-file patch without checking for "
+                f"pre-written content."
+            )
 
-    body_lines = [f"+{line}" for line in lines]
+    if existing_path is None:
+        old_content = ""
+        final_content = new_content
+    else:
+        old_content = existing_path.read_text(encoding="utf-8")
 
-    if not ends_with_newline:
-        body_lines.append(r"\ No newline at end of file")
+        new_fm_lines, _ = parse_jekyll_file(new_content)
+        existing_fm_lines, existing_body = parse_jekyll_file(old_content)
 
-    patch_text = "\n".join([
-        f"diff --git a/{target_path} b/{target_path}",
-        "new file mode 100644",
-        "index 0000000..0000000",
-        "--- /dev/null",
-        f"+++ b/{target_path}",
-        f"@@ -0,0 +1,{len(lines)} @@",
-        *body_lines,
-        "",
-    ])
+        merged_fm_lines = merge_front_matter(existing_fm_lines, new_fm_lines)
+
+        final_content = "---\n" + "\n".join(merged_fm_lines) + "\n---\n\n" + existing_body
+
+        logger.info(
+            f"Pre-written content found at {existing_path} — merging "
+            f"instead of replacing"
+        )
+
+    patch_text = build_unified_patch(target_rel_path, old_content, final_content)
 
     patch_dir = Path("output/patches")
     patch_dir.mkdir(parents=True, exist_ok=True)
@@ -478,3 +500,130 @@ def generate_website_patch(md_path: Path, show: str, ep_str: str) -> Path:
     patch_path.write_text(patch_text, encoding="utf-8")
 
     return patch_path
+
+
+# Front-matter fields the pipeline is authoritative on: none of these can
+# be known before the audio has actually been processed, so they always
+# take the freshly-computed value, even when merging into a pre-written
+# file.
+ALWAYS_OVERWRITE_FRONT_MATTER_KEYS = {
+    "created", "duration", "audio_url", "audio_size", "audio_type",
+}
+
+
+def parse_jekyll_file(content: str):
+    """
+    Split a Jekyll file into (front_matter_lines, body).
+
+    front_matter_lines is the raw list of 'key: value' lines (original
+    formatting preserved) found between the two '---' delimiters. body is
+    everything after the closing '---', with the conventional leading
+    blank line stripped.
+    """
+
+    lines = content.split("\n")
+
+    if not lines or lines[0].strip() != "---":
+        return [], content
+
+    try:
+        closing_idx = lines[1:].index("---") + 1
+    except ValueError:
+        return [], content
+
+    fm_lines = lines[1:closing_idx]
+    body = "\n".join(lines[closing_idx + 1:]).lstrip("\n")
+
+    return fm_lines, body
+
+
+def front_matter_lines_to_dict(fm_lines):
+    """{'key': 'raw value string'} — value keeps its original formatting
+    (quotes, etc.) so preserved/overwritten lines round-trip cleanly."""
+
+    result = {}
+
+    for line in fm_lines:
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        result[key.strip()] = value.strip()
+
+    return result
+
+
+def merge_front_matter(existing_fm_lines, new_fm_lines):
+    """
+    Reconcile a pre-written episode's front matter with the freshly
+    generated one.
+
+    - Keys in ALWAYS_OVERWRITE_FRONT_MATTER_KEYS always take the fresh
+      value.
+    - Any other key already present in the pre-written file keeps its
+      original value untouched (title, description, publish_date, etc.).
+    - Any key present in the fresh output but missing from the pre-written
+      file is appended (covers genuinely new front-matter fields, or ones
+      the person simply hadn't filled in yet).
+    """
+
+    new_fields = front_matter_lines_to_dict(new_fm_lines)
+
+    merged_lines = []
+    seen_keys = set()
+
+    for line in existing_fm_lines:
+        if ":" not in line:
+            merged_lines.append(line)
+            continue
+
+        key = line.split(":", 1)[0].strip()
+        seen_keys.add(key)
+
+        if key in ALWAYS_OVERWRITE_FRONT_MATTER_KEYS and key in new_fields:
+            merged_lines.append(f"{key}: {new_fields[key]}")
+        else:
+            merged_lines.append(line)
+
+    for line in new_fm_lines:
+        if ":" not in line:
+            continue
+        key = line.split(":", 1)[0].strip()
+        if key not in seen_keys:
+            merged_lines.append(line)
+
+    return merged_lines
+
+
+def build_unified_patch(target_rel_path: str, old_content: str, new_content: str) -> str:
+    """
+    Build a git-apply-compatible unified diff between old_content and
+    new_content (old_content == "" means "file doesn't exist yet").
+    """
+
+    is_new = old_content == ""
+
+    old_lines = old_content.splitlines(keepends=True) if old_content else []
+    new_lines = new_content.splitlines(keepends=True)
+
+    diff = difflib.unified_diff(
+        old_lines,
+        new_lines,
+        fromfile="/dev/null" if is_new else f"a/{target_rel_path}",
+        tofile=f"b/{target_rel_path}",
+    )
+
+    header = [f"diff --git a/{target_rel_path} b/{target_rel_path}\n"]
+
+    if is_new:
+        header.append("new file mode 100644\n")
+
+    header.append("index 0000000..0000000 100644\n")
+
+    body = "".join(diff)
+
+    # unified_diff doesn't add a trailing newline marker for content whose
+    # last line lacks one — git's patch format expects that to be explicit.
+    if new_lines and not new_lines[-1].endswith("\n"):
+        body += "\n\\ No newline at end of file\n"
+
+    return "".join(header) + body
