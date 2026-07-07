@@ -108,3 +108,5 @@ def single_pass(input_file: Path, output_file: Path):
         str(output_file),
     ]
     _run(cmd)
+
+

@@ -25,15 +25,14 @@ import traceback
 
 
 # ── Setup logging ──────────────────────────────────────────────────────────────
+#
+# NOTE: We deliberately do NOT attach a handler here. Entry-point scripts
+# (run.py, retry_failed.py, manage_history.py) call logging.basicConfig()
+# once at startup, which attaches a handler to the root logger. Since this
+# logger propagates by default, adding a second handler here caused every
+# line to be emitted twice (once here, once via propagation to root).
 
 logger = logging.getLogger("podcast_pipeline")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    ))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
 
 
 # ── Exception hierarchy ────────────────────────────────────────────────────────
@@ -99,17 +98,17 @@ DEFAULT_RETRY_CONFIG = RetryConfig()
 
 # Aggressive retries for unstable services (archive.org, buzzsprout)
 ARCHIVE_RETRY_CONFIG = RetryConfig(
-    max_attempts=8,
+    max_attempts=3,
     initial_delay_sec=3,
     max_delay_sec=180,
-    backoff_factor=2.0,
+    backoff_factor=10.0,
 )
 
 BUZZSPROUT_RETRY_CONFIG = RetryConfig(
-    max_attempts=6,
+    max_attempts=3,
     initial_delay_sec=2,
     max_delay_sec=120,
-    backoff_factor=2.0,
+    backoff_factor=10.0,
 )
 
 
