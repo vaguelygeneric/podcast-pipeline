@@ -29,9 +29,6 @@ Usage examples are in README.md, but quick reference:
   # Audio only, no upload
   python run.py episode.m4a --ep 42 --show mypodcast --desc "..." --no-upload
 
-  # Test audio processing only (compares single-pass vs double-pass output)
-  python run.py episode.m4a --ep 42 --show mypodcast --desc "..." --test-audio
-
   # Generate video from an already-processed mp3
   python run.py output/mypodcast_ep0042.mp3 --ep 42 --show mypodcast --desc "..." --no-audio --no-upload --video
 
@@ -624,7 +621,6 @@ def parse_args():
     p.add_argument("--test-upload", action="store_true")
 
     # QA / Dev
-    p.add_argument("--test-audio", action="store_true")
     p.add_argument("--quick-video", action="store_true")
 
     # Video
@@ -756,16 +752,6 @@ def main():
     }
 
     # ── Stage 1: Audio ────────────────────────────────────────────────────────
-    if args.test_audio:
-        # Write both variants and bail out — user compares manually
-        from pipeline.audio import loudnorm_pass1, loudnorm_pass2, single_pass
-        logger.info("\n=== TEST AUDIO MODE ===")
-        single_pass(input_path, f"output/test-{base_name}-v1-singlepass.mp3")
-        stats = loudnorm_pass1(input_path)
-        loudnorm_pass2(input_path, f"output/test-{base_name}-v2-doublepass.mp3", stats)
-        logger.info("\nCreated two variants for comparison. Pick one, then run without --test-audio.")
-        return
-
     if args.no_audio:
         # Audio stage skipped — input must already be a clean mp3
         final_audio = input_path
