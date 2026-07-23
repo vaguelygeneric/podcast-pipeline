@@ -7,9 +7,13 @@ audio pipeline instead of branching on show name in run.py:
   "single_channel"   -> pipeline.audio         existing mono two-pass loudnorm
                                                  path (Daily's field recordings)
   "dual_lav_stereo"  -> pipeline.audio_stereo  per-channel loudness leveling +
-                                                 mixdown, for two-lav-mic
-                                                 conversational recordings
-                                                 (VotR)
+                                                 mixdown, one stereo file, two
+                                                 lav mics (VotR)
+  "dual_mono_files"  -> pipeline.audio_stereo  same leveling + mixdown, but for
+                                                 two separate mono files -- each
+                                                 speaker recording locally on
+                                                 their own device (remote/
+                                                 video-call podcasts)
 
 A show not listed in audio_profiles.json falls back to whatever "_default"
 points at, so anything not yet configured behaves exactly as it did before
@@ -40,13 +44,17 @@ def get_profile(show: str) -> dict:
     return profiles.get(show, profiles[default_key])
 
 
-def process(input_file: Path, output_file: Path, show: str):
+def process(input_file: Path, output_file: Path, show: str, input_file2: Path = None):
     """
     Run whichever audio pipeline `show`'s profile specifies.
 
     This is the single entry point run.py's Stage 1 calls. Adding a new
     show/mode combination should only ever require an audio_profiles.json
     entry -- not a change here or in run.py.
+
+    input_file2 is only used (and required) for "dual_mono_files" mode --
+    it's each speaker's own separately-recorded mono file. It's ignored for
+    every other mode.
     """
     profile = get_profile(show)
     mode = profile.get("mode", "single_channel")
@@ -59,6 +67,15 @@ def process(input_file: Path, output_file: Path, show: str):
     elif mode == "dual_lav_stereo":
         from pipeline.audio_stereo import process_conversation_audio
         process_conversation_audio(input_file, output_file, profile=profile)
+
+    elif mode == "dual_mono_files":
+        if input_file2 is None:
+            raise ValueError(
+                f"show={show!r} is configured for dual_mono_files mode, "
+                "which needs a second speaker's file -- pass it with --input2"
+            )
+        from pipeline.audio_stereo import process_dual_mono_files
+        process_dual_mono_files(input_file, input_file2, output_file, profile=profile)
 
     else:
         raise ValueError(f"Unknown audio profile mode: {mode!r} (show={show!r})")
