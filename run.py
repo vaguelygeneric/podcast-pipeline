@@ -759,11 +759,10 @@ def main():
         results["audio"] = "skipped"
     else:
         try:
-            from pipeline.audio import loudnorm_pass1, loudnorm_pass2
+            from pipeline.audio_profiles import process as process_audio
             logger.info("\n=== Stage 1: Audio Processing ===")
-            stats = loudnorm_pass1(input_path)
             final_audio = Path(f"output/{base_name}.mp3")
-            loudnorm_pass2(input_path, final_audio, stats)
+            process_audio(input_path, final_audio, show=args.show)
             results["audio"] = "success"
             logger.info(f"[OK] Audio: {final_audio}")
         except Exception as e:
