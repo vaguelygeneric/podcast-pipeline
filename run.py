@@ -541,7 +541,18 @@ def parse_args():
     # Required
     p.add_argument(
         "input",
-        help="Source audio file (.m4a preferred, .mp3 also accepted)"
+        help="Source audio file (.m4a preferred, .mp3 also accepted). "
+             "For a show configured with dual_mono_files mode, this is "
+             "speaker A's file and --input2 is required for speaker B's."
+    )
+
+    p.add_argument(
+        "--input2",
+        dest="input2",
+        default=None,
+        help="Speaker B's separately-recorded mono file. Only used (and "
+             "required) when --show resolves to a dual_mono_files profile "
+             "in audio_profiles.json."
     )
 
     p.add_argument(
@@ -700,6 +711,22 @@ def main():
     if not input_path.exists():
         sys.exit(f"Error: input file not found: {input_path}")
 
+    input2_path = None
+    if args.input2 is not None:
+        input2_path = Path(args.input2)
+        if not input2_path.exists():
+            sys.exit(f"Error: --input2 file not found: {input2_path}")
+
+    # If this show's audio profile needs a second file, fail before
+    # reserving an episode rather than partway through Stage 1.
+    if not args.no_audio:
+        from pipeline.audio_profiles import get_profile
+        if get_profile(args.show).get("mode") == "dual_mono_files" and input2_path is None:
+            sys.exit(
+                f"Error: show '{args.show}' is configured for dual_mono_files "
+                "mode — pass speaker B's file with --input2"
+            )
+
     # Auto-assign episode number if omitted.
     if args.ep is None:
 
@@ -759,11 +786,10 @@ def main():
         results["audio"] = "skipped"
     else:
         try:
-            from pipeline.audio import loudnorm_pass1, loudnorm_pass2
+            from pipeline.audio_profiles import process as process_audio
             logger.info("\n=== Stage 1: Audio Processing ===")
-            stats = loudnorm_pass1(input_path)
             final_audio = Path(f"output/{base_name}.mp3")
-            loudnorm_pass2(input_path, final_audio, stats)
+            process_audio(input_path, final_audio, show=args.show, input_file2=input2_path)
             results["audio"] = "success"
             logger.info(f"[OK] Audio: {final_audio}")
         except Exception as e:
