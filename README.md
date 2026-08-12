@@ -11,13 +11,17 @@ podcast-pipeline/
 │
 ├── run.py                      ← Single entry point for everything
 │
-├── audio_profiles.json         ← Per-show audio processing config (see "Audio profiles" below)
+├── config/
+│   └── defaults.json           ← Show/audio-profile config (see "Configuration" below) — tracked in git
+│
+├── .files/
+│   └── history.json            ← Episode/reservation history — local run log, gitignored
 │
 ├── pipeline/                   ← Core pipeline modules (import from run.py)
 │   ├── __init__.py
 │   ├── audio.py                ← Single-mic/field-recording path: loudness normalisation (m4a → mono mp3)
 │   ├── audio_stereo.py         ← Dual-lav-mic conversation path: per-channel leveling → mono mixdown
-│   ├── audio_profiles.py       ← Reads audio_profiles.json, routes each show to audio.py or audio_stereo.py
+│   ├── audio_profiles.py       ← Named audio-profile dispatch — routes to audio.py or audio_stereo.py
 │   ├── video.py                ← Video stage orchestration (mp3 → mp4)
 │   └── publish.py              ← Metadata helpers, IA/Buzzsprout uploads, Jekyll page
 │
@@ -78,7 +82,7 @@ All commands run from the project root.
 ### Audio processing only — no video, no upload
 ```bash
 python run.py 20240420_143022_episode.m4a \
-  --ep 42 --show mypodcast \
+  --ep 42 --show mypodcast --audio-profile daily \
   --title "My Episode Title" \
   --desc "Episode description / show notes here." \
   --no-video --no-upload
@@ -87,7 +91,7 @@ python run.py 20240420_143022_episode.m4a \
 ### Compare single-pass vs double-pass audio (A/B test before committing)
 ```bash
 python run.py 20240420_143022_episode.m4a \
-  --ep 42 --show mypodcast \
+  --ep 42 --show mypodcast --audio-profile daily \
   --desc "..." \
   --test-audio
 # Writes output/test-mypodcast_ep0042-v1-singlepass.mp3
@@ -98,7 +102,7 @@ python run.py 20240420_143022_episode.m4a \
 ### Full production run — audio + video + Jekyll page (no upload)
 ```bash
 python run.py 20240420_143022_episode.m4a \
-  --ep 42 --show mypodcast \
+  --ep 42 --show mypodcast --audio-profile daily \
   --title "My Episode Title" \
   --desc "Episode description." \
   --no-upload
@@ -107,7 +111,7 @@ python run.py 20240420_143022_episode.m4a \
 ### Full production run with uploads
 ```bash
 python run.py 20240420_143022_episode.m4a \
-  --ep 42 --show mypodcast \
+  --ep 42 --show mypodcast --audio-profile daily \
   --title "My Episode Title" \
   --desc "Episode description." \
   --archive --buzzsprout
@@ -116,7 +120,7 @@ python run.py 20240420_143022_episode.m4a \
 ### Test upload to Internet Archive (marks item as [TEST])
 ```bash
 python run.py 20240420_143022_episode.m4a \
-  --ep 42 --show mypodcast \
+  --ep 42 --show mypodcast --audio-profile daily \
   --desc "..." \
   --archive --test-upload
 ```
@@ -124,7 +128,7 @@ python run.py 20240420_143022_episode.m4a \
 ### Skip audio (already have a clean mp3) — video only
 ```bash
 python run.py output/mypodcast_ep0042.mp3 \
-  --ep 42 --show mypodcast \
+  --ep 42 --show mypodcast --audio-profile daily \
   --desc "..." \
   --no-audio --no-upload
 ```
@@ -132,7 +136,7 @@ python run.py output/mypodcast_ep0042.mp3 \
 ### Quick video (faster render, simpler visuals)
 ```bash
 python run.py 20240420_143022_episode.m4a \
-  --ep 42 --show mypodcast \
+  --ep 42 --show mypodcast --audio-profile daily \
   --desc "..." \
   --no-upload --quick-video
 ```
@@ -140,7 +144,7 @@ python run.py 20240420_143022_episode.m4a \
 ### High-resolution video
 ```bash
 python run.py 20240420_143022_episode.m4a \
-  --ep 42 --show mypodcast \
+  --ep 42 --show mypodcast --audio-profile daily \
   --desc "..." \
   --no-upload --resolution 1920x1080
 ```
@@ -148,7 +152,7 @@ python run.py 20240420_143022_episode.m4a \
 ### Custom logo
 ```bash
 python run.py 20240420_143022_episode.m4a \
-  --ep 42 --show mypodcast \
+  --ep 42 --show mypodcast --audio-profile daily \
   --desc "..." \
   --no-upload --logo assets/images/VG_Podcast.png
 ```
@@ -160,64 +164,111 @@ python run.py 20240420_143022_episode.m4a \
 | Flag | Default | Description |
 |---|---|---|
 | `input` | *(required)* | Source audio file — m4a preferred, mp3 accepted |
-| `--ep` | *(required)* | Episode number (integer) |
-| `--show` | *(required)* | Show slug used in filenames/URLs, and to look up the show's entry in `audio_profiles.json` (see below) |
-| `--input2` | `None` | Speaker B's file, for shows configured with `dual_mono_files` mode (see below). Unused otherwise. |
-| `--desc` | *(required)* | Episode description / show notes |
+| `--ep` | auto-assigned | Episode number (integer) |
+| `--show` | prompted | Show slug used in filenames/URLs/archive.org IDs, and to look up the show's bundle in `config/defaults.json` (see "Configuration" below). Non-slug characters (spaces, punctuation, uppercase) trigger a prompt to auto-slugify. |
+| `--audio-profile` | prompted | Named audio profile from `config/defaults.json`'s `audio_profiles` registry (see "Configuration" below) |
+| `--input2` | `None` | Speaker B's file, for a profile configured with `dual_mono_files` mode. Unused otherwise. |
+| `--desc` | prompted | Episode description / show notes |
 | `--title` | `Episode NNNN` | Episode title |
-| `--logo` | `assets/images/logo.png` | Logo PNG for video overlay |
-| `--no-audio` | off | Skip audio stage; input must be a clean mp3 |
-| `--no-video` | off | Skip video generation |
-| `--no-upload` | off | Skip all uploads |
-| `--archive` | off | Upload mp3 to Internet Archive |
-| `--buzzsprout` | off | Upload mp3 to Buzzsprout |
+| `--publish-date` | prompted | Release date (`YYYY-MM-DD`) for Jekyll front matter |
+| `--logo` | `.files/images/logo.png` | Logo PNG for video overlay |
+| `--website-repo` | `config/defaults.json`'s `website_repo` | Path to the website repo checkout, for merging into a pre-written episode page |
+| `--video` / `--no-video` | prompted (off by default) | Generate video |
+| `--upload` / `--no-upload` | prompted (on by default) | Enable platform uploads (Archive/Buzzsprout gated separately below) |
+| `--archive` / `--no-archive` | prompted, or skipped+`False` if `IA_ACCESS_KEY`/`IA_SECRET_KEY` aren't set | Upload mp3 to Internet Archive |
+| `--buzzsprout` / `--no-buzzsprout` | prompted, or skipped+`False` if `BUZZSPROUT_API_TOKEN`/`BUZZSPROUT_PODCAST_ID` aren't set | Upload mp3 to Buzzsprout |
+| `--jekyll` / `--no-jekyll` | prompted (on by default) | Generate the Jekyll markdown page |
+| `--no-audio` | off | Skip audio stage; input must already be a clean mp3 |
 | `--test-upload` | off | Mark IA upload as `[TEST]` |
 | `--test-audio` | off | Write single-pass + double-pass variants for comparison |
 | `--quick-video` | off | Use faster, simpler renderer |
 | `--resolution` | `1280x720` | Video output resolution |
 | `--fps` | `30` | Video framerate |
+| `--ring-scale`, `--n-bars`, `--bar-height`, `--n-sparks`, `--glow-blur` | see `video/src/renderer.py` | Visualizer tuning knobs |
+| `--style` | `v2` | `v1` or `v2` renderer style |
+| `--theme` | see `video/src/palette.py` | Color theme — run with `--help` to list available themes |
+| `--mode` | `dark` | `dark` or `light` |
+| `--watermark` | `None` | Optional watermark image path |
+| `--watermark-opacity`, `--watermark-size`, `--watermark-margin` | `0.35`, `0.08`, `24` | Watermark tuning knobs |
 
 ---
 
-## Audio profiles
+## Configuration
 
-Not every podcast records audio the same way, so Stage 1 (audio processing)
-is driven by `audio_profiles.json` at the project root rather than
-hardcoded per show. Each entry is keyed by the same show slug you pass to
-`--show`:
+`config/defaults.json` is the single source of truth for standing
+preferences and audio-profile definitions. It's tracked in git — this is
+project configuration worth reviewing in diffs, not personal/local state
+(that's what the gitignored `.files/history.json` is for). It's created
+automatically with built-in fallback values on first run if missing, and
+is meant to be hand-edited afterward.
 
 ```json
 {
-  "_default": "daily",
+  "show": "daily",
+  "video": false,
+  "archive": true,
+  "buzzsprout": false,
+  "upload": true,
+  "jekyll": true,
+  "test_upload": false,
+  "website_repo": "../website",
 
-  "daily": {
-    "mode": "single_channel",
-    "lufs": -16,
-    "tp": -1.5,
-    "lra": 11
+  "audio_profiles": {
+    "daily": {
+      "mode": "single_channel",
+      "lufs": -16,
+      "tp": -1.5,
+      "lra": 11
+    },
+    "vault-of-the-raw": {
+      "mode": "dual_lav_stereo",
+      "lufs": -16,
+      "tp": -1.5,
+      "lra": 11,
+      "channel_filter": "highpass=f=80,lowpass=f=14000,agate=threshold=-45dB:ratio=8:attack=20:release=250,acompressor=threshold=-18dB:ratio=3:attack=20:release=250:makeup=3"
+    }
   },
 
-  "vault-of-the-raw": {
-    "mode": "dual_lav_stereo",
-    "lufs": -16,
-    "tp": -1.5,
-    "lra": 11,
-    "channel_filter": "highpass=f=80,lowpass=f=14000,agate=threshold=-45dB:ratio=8:attack=20:release=250,acompressor=threshold=-18dB:ratio=3:attack=20:release=250:makeup=3"
-  },
+  "default_audio_profile": "daily",
 
-  "some-remote-show": {
-    "mode": "dual_mono_files",
-    "lufs": -16,
-    "tp": -1.5,
-    "lra": 11,
-    "channel_filter": "highpass=f=80,lowpass=f=14000,agate=threshold=-45dB:ratio=8:attack=20:release=250,acompressor=threshold=-18dB:ratio=3:attack=20:release=250:makeup=3"
+  "shows": {
+    "daily": {
+      "audio_profile": "daily"
+    },
+    "vault-of-the-raw": {
+      "audio_profile": "vault-of-the-raw"
+    }
   }
 }
 ```
 
-A show not listed here falls back to whatever `_default` points at.
+**Top-level fields** (`show`, `video`, `archive`, `buzzsprout`, `upload`,
+`jekyll`, `test_upload`, `website_repo`) are global fallbacks — the value
+used to pre-fill a prompt when nothing more specific applies.
 
-**Modes:**
+**`audio_profiles`** is a registry of named audio-processing profiles (this
+used to be its own file, `audio_profiles.json`, at the project root — it's
+merged in here now). Profile names are independent of show slugs on
+purpose: a one-off or test show can reuse an existing profile (e.g.
+`"daily"`) by name without needing its own registry entry. See "Audio
+profile modes" below for what each `mode` does.
+
+**`default_audio_profile`** is which registry entry to suggest when a show
+has no standing choice of its own (this replaces `audio_profiles.json`'s
+old `"_default"` key).
+
+**`shows`** holds per-show bundles, keyed by show slug. Any subset of
+`video`/`upload`/`archive`/`buzzsprout`/`jekyll`/`website_repo`/
+`audio_profile` can be given — `audio_profile` here is a *name* referencing
+the `audio_profiles` registry above, not an inline profile definition. When
+a run's `--show` matches a key here, and none of those fields were passed
+explicitly on the command line, you're offered a single "use these
+defaults?" prompt instead of one prompt per field. A show with no bundle
+(or only a partial one) just gets prompted individually for whatever isn't
+covered — including a first-run choice of audio profile, which is exactly
+how you'd spin up a one-off/test show using an existing profile.
+
+### Audio profile modes
 
 | Mode | Use for | What it does |
 |---|---|---|
@@ -225,16 +276,21 @@ A show not listed here falls back to whatever `_default` points at.
 | `dual_lav_stereo` | Two people, each on their own lav mic, recorded to a single stereo file (left = speaker A, right = speaker B) | Splits the channels, runs each through a cleanup filter chain, then loudnorms each channel **independently** to the same target — so an unevenly-recorded pair (one mic hot, one quiet) gets leveled *before* mixing, which a single loudnorm pass on the combined signal can't do. Mixes to mono, then runs one more loudnorm pass on the mixdown as a safety net (summing two independently-normalized channels tends to land a few dB hot). This is `pipeline/audio_stereo.py`. |
 | `dual_mono_files` | Remote/video-call podcasts, where each participant records locally on their own device and you end up with two separate mono files instead of one stereo file | Same leveling and mixdown as `dual_lav_stereo` — independent per-speaker cleanup + loudnorm, then mix, then a safety-net loudnorm pass — just skipping the channel-split step since each file is already one speaker only. Pass speaker A's file as the usual `input` argument and speaker B's file with `--input2`. Also lives in `pipeline/audio_stereo.py`. |
 
-To add a show, give it a `mode` and your target `lufs`/`tp`/`lra`. `dual_lav_stereo` and `dual_mono_files` shows also need a `channel_filter` — an ffmpeg audio-filter-chain string applied to each speaker before normalization (adjust this if your mics need a different noise-reduction/gating approach than the default).
+To add a profile, give it a `mode` and your target `lufs`/`tp`/`lra` under
+`audio_profiles` in `config/defaults.json`. `dual_lav_stereo` and
+`dual_mono_files` profiles also need a `channel_filter` — an ffmpeg
+audio-filter-chain string applied to each speaker before normalization
+(adjust this if your mics need a different noise-reduction/gating approach
+than the default).
 
-For a `dual_mono_files` show, pass both files on the command line:
+For a `dual_mono_files` profile, pass both files on the command line:
 
 ```bash
-python run.py speaker_a.wav --input2 speaker_b.wav --show some-remote-show
+python run.py speaker_a.wav --input2 speaker_b.wav --show some-remote-show --audio-profile some-remote-show
 ```
 
 **Caveats:**
-- `--test-audio` currently only previews the `single_channel` path (single-pass vs. two-pass mp3s for A/B listening), regardless of what mode a show is configured for — there's no equivalent quick-preview command for `dual_lav_stereo` or `dual_mono_files` yet.
+- `--test-audio` currently only previews the `single_channel` path (single-pass vs. two-pass mp3s for A/B listening), regardless of which profile is selected — there's no equivalent quick-preview command for `dual_lav_stereo` or `dual_mono_files` yet.
 - `dual_mono_files` doesn't do anything to line up the two files in time — if the two participants didn't start recording at exactly the same moment, sync them (trim the lead-in) before running the pipeline.
 
 

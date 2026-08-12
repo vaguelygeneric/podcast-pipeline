@@ -38,17 +38,21 @@ INTERACTIVE PROMPTS:
 
   Any of --show, --desc, --video/--no-video, --archive/--no-archive,
   --buzzsprout/--no-buzzsprout, --upload/--no-upload, --jekyll/--no-jekyll,
-  and --publish-date that are NOT given explicitly on the command line will
-  be prompted for interactively, pre-filled with sensible defaults (see
-  .files/defaults.json below) so the common case is just hitting Enter
-  repeatedly. Passing a flag explicitly always skips its prompt.
+  --audio-profile, and --publish-date that are NOT given explicitly on the
+  command line will be prompted for interactively, pre-filled with sensible
+  defaults (see config/defaults.json below) so the common case is just
+  hitting Enter repeatedly. Passing a flag explicitly always skips its
+  prompt.
 
-DEFAULTS FILE:
+CONFIG FILE:
 
-  .files/defaults.json holds your standing preferences (e.g. which show you
+  config/defaults.json holds your standing preferences (e.g. which show you
   publish most often, whether video/archive/buzzsprout/upload/jekyll should
-  default on or off). It's created automatically with sensible defaults on
-  first run, and can be hand-edited afterward.
+  default on or off) and the named audio-profile registry that used to live
+  in audio_profiles.json. It's created automatically with sensible defaults
+  on first run, and can be hand-edited afterward. Unlike the old
+  .files/defaults.json, this file is tracked in git — it's project
+  configuration, not personal/local state.
 
 ───────────────────────────────────────────────────────────────────────────────
 EPISODE HISTORY / AUTO-NUMBERING SYSTEM
@@ -751,8 +755,9 @@ def parse_args():
         help=(
             "Path to the website repo checkout, used to merge into a "
             "pre-written episode page instead of generating a plain "
-            "new-file patch. Defaults to .files/defaults.json's "
-            "'website_repo' value ('../website' out of the box)."
+            "new-file patch. Defaults to config/defaults.json's "
+            "'website_repo' value ('../website' out of the box), or a "
+            "show-specific override under that show's \"shows\" bundle."
         )
     )
 
