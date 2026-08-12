@@ -1,0 +1,38 @@
+{
+  "show": "daily",
+  "video": false,
+  "archive": true,
+  "buzzsprout": false,
+  "upload": true,
+  "jekyll": true,
+  "test_upload": false,
+  "website_repo": "../website",
+
+  "audio_profiles": {
+    "daily": {
+      "mode": "single_channel",
+      "lufs": -16,
+      "tp": -1.5,
+      "lra": 11
+    },
+
+    "vault-of-the-raw": {
+      "mode": "dual_lav_stereo",
+      "lufs": -16,
+      "tp": -1.5,
+      "lra": 11,
+      "channel_filter": "highpass=f=80,lowpass=f=14000,agate=threshold=-45dB:ratio=8:attack=20:release=250,acompressor=threshold=-18dB:ratio=3:attack=20:release=250:makeup=3"
+    }
+  },
+
+  "default_audio_profile": "daily",
+
+  "shows": {
+    "daily": {
+      "audio_profile": "daily"
+    },
+    "vault-of-the-raw": {
+      "audio_profile": "vault-of-the-raw"
+    }
+  }
+}

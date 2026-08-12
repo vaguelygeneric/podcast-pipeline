@@ -139,10 +139,15 @@ logger = logging.getLogger("podcast_pipeline")
 HISTORY_FILE = Path(".files/history.json")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Defaults file (standing preferences for interactive prompts)
+# Config file (standing preferences for interactive prompts, plus the named
+# audio-profile registry)
 # ──────────────────────────────────────────────────────────────────────────────
 
-DEFAULTS_FILE = Path(".files/defaults.json")
+# Lives under config/ rather than the gitignored .files/ — unlike history.json
+# (a personal run log) this is show/profile configuration worth tracking and
+# reviewing in git, the same way audio_profiles.json used to be before it was
+# merged in here.
+DEFAULTS_FILE = Path("config/defaults.json")
 
 DEFAULT_DEFAULTS = {
     "show": "daily",
@@ -153,11 +158,21 @@ DEFAULT_DEFAULTS = {
     "jekyll": True,
     "test_upload": False,
     "website_repo": "../website",
+    # Named audio profiles (formerly audio_profiles.json at the repo root).
+    # Keyed by profile name -- NOT show slug, so a one-off/test show can
+    # reuse an existing profile (e.g. "daily") by name. See
+    # pipeline/audio_profiles.py for what each "mode" does.
+    "audio_profiles": {},
+    # Which named profile above to suggest when a show has no standing
+    # choice of its own (mirrors audio_profiles.json's old "_default").
+    "default_audio_profile": "daily",
     # Per-show bundles. Keyed by show slug; any subset of the prompted
-    # fields above (video/upload/archive/buzzsprout/jekyll) can be given.
-    # When a run's --show matches a key here, and none of those fields
-    # were passed explicitly on the CLI, the user is offered a single
-    # "use these defaults?" prompt instead of one prompt per field.
+    # fields above (video/upload/archive/buzzsprout/jekyll/audio_profile)
+    # can be given. When a run's --show matches a key here, and none of
+    # those fields were passed explicitly on the CLI, the user is offered
+    # a single "use these defaults?" prompt instead of one prompt per field.
+    # "audio_profile" here is a NAME referencing "audio_profiles" above,
+    # not an inline profile definition.
     "shows": {},
 }
 
@@ -175,7 +190,9 @@ def load_defaults(show: str):
     Returns (resolved, show_bundle):
       - resolved: a single flat dict — the value to pre-fill each
         interactive prompt with, global fields overridden by this show's
-        bundle where present (including "website_repo").
+        bundle where present (including "website_repo" and "audio_profile").
+        Also carries the full "audio_profiles" registry through unchanged,
+        for pipeline.audio_profiles.get_profile() to look names up in.
       - show_bundle: the raw per-show dict as written in defaults.json
         (or {} if this show has no entry yet). Used only to decide
         whether to offer the "use these defaults?" bundle prompt and to
@@ -669,14 +686,26 @@ def parse_args():
         dest="input2",
         default=None,
         help="Speaker B's separately-recorded mono file. Only used (and "
-             "required) when --show resolves to a dual_mono_files profile "
-             "in audio_profiles.json."
+             "required) when the resolved --audio-profile is in "
+             "dual_mono_files mode."
     )
 
     p.add_argument(
         "--show",
         default=None,
-        help="Show slug (e.g. 'daily'). Prompted interactively if omitted."
+        help="Show slug (e.g. 'daily'). Prompted interactively if omitted. "
+             "Non-slug characters (spaces, punctuation, uppercase) trigger "
+             "a prompt to auto-slugify."
+    )
+
+    p.add_argument(
+        "--audio-profile",
+        dest="audio_profile",
+        default=None,
+        help="Named audio profile from config/defaults.json's "
+             "\"audio_profiles\" registry (e.g. 'daily', 'vault-of-the-raw'). "
+             "Prompted interactively if omitted and the show has no "
+             "standing choice of its own."
     )
 
     p.add_argument(
@@ -820,7 +849,7 @@ def main():
     # If defaults.json has a "shows" entry for this show, and none of the
     # fields it covers were already passed explicitly on the CLI, offer to
     # apply the whole bundle at once instead of prompting for each field.
-    PROMPTED_FIELDS = ("video", "upload", "archive", "buzzsprout", "jekyll")
+    PROMPTED_FIELDS = ("video", "upload", "archive", "buzzsprout", "jekyll", "audio_profile")
 
     untouched = all(getattr(args, field) is None for field in PROMPTED_FIELDS)
 
@@ -856,6 +885,23 @@ def main():
             for field in PROMPTED_FIELDS:
                 print(f"  {field}: {getattr(args, field)}")
             print()
+
+    if args.audio_profile is None and not args.no_audio:
+        available_profiles = sorted(defaults.get("audio_profiles", {}).keys())
+
+        if not available_profiles:
+            sys.exit(
+                "Error: no audio profiles registered — add at least one "
+                "entry under \"audio_profiles\" in config/defaults.json."
+            )
+
+        default_profile = defaults.get("default_audio_profile", available_profiles[0])
+        if default_profile not in available_profiles:
+            default_profile = available_profiles[0]
+
+        args.audio_profile = prompt_choice(
+            "Audio profile", available_profiles, default_profile
+        )
 
     if args.video is None:
         args.video = prompt_yn("Generate video?", defaults["video"])
@@ -900,14 +946,15 @@ def main():
         if not input2_path.exists():
             sys.exit(f"Error: --input2 file not found: {input2_path}")
 
-    # If this show's audio profile needs a second file, fail before
+    # If the resolved audio profile needs a second file, fail before
     # reserving an episode rather than partway through Stage 1.
     if not args.no_audio:
         from pipeline.audio_profiles import get_profile
-        if get_profile(args.show).get("mode") == "dual_mono_files" and input2_path is None:
+        audio_profile = get_profile(defaults, args.audio_profile)
+        if audio_profile.get("mode") == "dual_mono_files" and input2_path is None:
             sys.exit(
-                f"Error: show '{args.show}' is configured for dual_mono_files "
-                "mode — pass speaker B's file with --input2"
+                f"Error: audio profile '{args.audio_profile}' is configured "
+                "for dual_mono_files mode — pass speaker B's file with --input2"
             )
 
     # Auto-assign episode number if omitted.
@@ -971,8 +1018,15 @@ def main():
         try:
             from pipeline.audio_profiles import process as process_audio
             logger.info("\n=== Stage 1: Audio Processing ===")
+            logger.info(f"Using audio profile: {args.audio_profile}")
             final_audio = Path(f"output/{base_name}.mp3")
-            process_audio(input_path, final_audio, show=args.show, input_file2=input2_path)
+            process_audio(
+                input_path,
+                final_audio,
+                profile=audio_profile,
+                profile_name=args.audio_profile,
+                input_file2=input2_path,
+            )
             results["audio"] = "success"
             logger.info(f"[OK] Audio: {final_audio}")
         except Exception as e:

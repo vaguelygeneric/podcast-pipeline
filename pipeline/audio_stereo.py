@@ -285,10 +285,10 @@ def process_conversation_audio(
     right = speaker B (see module docstring for the full workflow and
     why per-speaker leveling matters).
 
-    profile: optional dict of overrides from audio_profiles.json
-             (keys: lufs, tp, lra, channel_filter). Falls back to this
-             module's own defaults when not given, so direct/manual
-             calls keep working unchanged.
+    profile: optional dict of overrides from config/defaults.json's
+             "audio_profiles" registry (keys: lufs, tp, lra, channel_filter).
+             Falls back to this module's own defaults when not given, so
+             direct/manual calls keep working unchanged.
     """
 
     profile = profile or {}
@@ -322,9 +322,9 @@ def process_dual_mono_files(
     Same leveling workflow as process_conversation_audio(), just skipping
     the channelsplit step since each file is already one speaker only.
 
-    profile: optional dict of overrides from audio_profiles.json
-             (keys: lufs, tp, lra, channel_filter). Falls back to this
-             module's own defaults when not given.
+    profile: optional dict of overrides from config/defaults.json's
+             "audio_profiles" registry (keys: lufs, tp, lra, channel_filter).
+             Falls back to this module's own defaults when not given.
     """
 
     profile = profile or {}
