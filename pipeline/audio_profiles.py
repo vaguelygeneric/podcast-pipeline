@@ -1,8 +1,9 @@
 """
-pipeline/audio_profiles.py — Per-show audio processing profile dispatch.
+pipeline/audio_profiles.py — Named audio processing profile dispatch.
 
-Loads audio_profiles.json (repo root) and routes each show to the right
-audio pipeline instead of branching on show name in run.py:
+Routes each episode run to the right audio pipeline based on a *named*
+profile (looked up from config/defaults.json's "audio_profiles" registry)
+instead of branching on show name in run.py:
 
   "single_channel"   -> pipeline.audio         existing mono two-pass loudnorm
                                                  path (Daily's field recordings)
@@ -15,9 +16,13 @@ audio pipeline instead of branching on show name in run.py:
                                                  their own device (remote/
                                                  video-call podcasts)
 
-A show not listed in audio_profiles.json falls back to whatever "_default"
-points at, so anything not yet configured behaves exactly as it did before
-this module existed.
+Profiles are named independently of show slug (config/defaults.json's
+"audio_profiles" registry) precisely so a one-off/test show can reuse an
+existing profile (e.g. "daily") without needing its own audio_profiles
+entry. Each show's standing choice of profile — if it has one — lives in
+that show's bundle under "shows"[show]["audio_profile"], which run.py
+resolves before calling into this module; a show with no standing choice
+just gets prompted each run (see prompt_choice() in run.py).
 
 NOTE: "single_channel" mode currently ignores the lufs/tp/lra fields in the
 profile and just calls pipeline.audio's existing hardcoded constants
@@ -26,37 +31,52 @@ path gets parameterized the same way audio_stereo's did. They're set to
 match the current constants so there's no discrepancy either way.
 """
 
-import json
 from pathlib import Path
 
-_PROFILES_PATH = Path(__file__).parent.parent / "audio_profiles.json"
 
-
-def _load_profiles() -> dict:
-    with open(_PROFILES_PATH) as f:
-        return json.load(f)
-
-
-def get_profile(show: str) -> dict:
-    """Look up the audio profile for a show slug, falling back to _default."""
-    profiles = _load_profiles()
-    default_key = profiles.get("_default", "daily")
-    return profiles.get(show, profiles[default_key])
-
-
-def process(input_file: Path, output_file: Path, show: str, input_file2: Path = None):
+def get_profile(defaults: dict, profile_name: str) -> dict:
     """
-    Run whichever audio pipeline `show`'s profile specifies.
+    Look up a named audio profile from the merged config (as returned by
+    run.py's load_defaults()). Raises KeyError with the list of valid
+    names if profile_name isn't registered -- config/defaults.json is
+    hand-edited, so a typo there should fail loudly and early rather than
+    silently falling back to the wrong loudness targets.
+    """
+
+    profiles = defaults.get("audio_profiles", {})
+
+    if profile_name not in profiles:
+        raise KeyError(
+            f"Unknown audio profile {profile_name!r} — available: "
+            f"{sorted(profiles)} (see \"audio_profiles\" in config/defaults.json)"
+        )
+
+    return profiles[profile_name]
+
+
+def process(
+    input_file: Path,
+    output_file: Path,
+    profile: dict,
+    profile_name: str = "?",
+    input_file2: Path = None,
+):
+    """
+    Run whichever audio pipeline `profile` specifies.
 
     This is the single entry point run.py's Stage 1 calls. Adding a new
-    show/mode combination should only ever require an audio_profiles.json
-    entry -- not a change here or in run.py.
+    mode combination should only ever require a config/defaults.json
+    "audio_profiles" entry -- not a change here or in run.py.
+
+    profile_name is used only for error messages -- pass the name you
+    looked profile up with via get_profile() so failures are easy to trace
+    back to a specific config/defaults.json entry.
 
     input_file2 is only used (and required) for "dual_mono_files" mode --
     it's each speaker's own separately-recorded mono file. It's ignored for
     every other mode.
     """
-    profile = get_profile(show)
+
     mode = profile.get("mode", "single_channel")
 
     if mode == "single_channel":
@@ -71,11 +91,14 @@ def process(input_file: Path, output_file: Path, show: str, input_file2: Path = 
     elif mode == "dual_mono_files":
         if input_file2 is None:
             raise ValueError(
-                f"show={show!r} is configured for dual_mono_files mode, "
-                "which needs a second speaker's file -- pass it with --input2"
+                f"audio profile {profile_name!r} is configured for "
+                "dual_mono_files mode, which needs a second speaker's "
+                "file -- pass it with --input2"
             )
         from pipeline.audio_stereo import process_dual_mono_files
         process_dual_mono_files(input_file, input_file2, output_file, profile=profile)
 
     else:
-        raise ValueError(f"Unknown audio profile mode: {mode!r} (show={show!r})")
+        raise ValueError(
+            f"Unknown audio profile mode: {mode!r} (profile={profile_name!r})"
+        )
