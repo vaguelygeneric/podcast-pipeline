@@ -162,9 +162,24 @@ DEFAULT_DEFAULTS = {
 }
 
 
-def load_defaults():
+def load_defaults(show: str):
     """
-    Load standing preferences used to pre-fill interactive prompts.
+    Load standing preferences for a given show.
+
+    Global fields at the top level of defaults.json act as the fallback;
+    a per-show block under "shows"[show] (if present) overrides them.
+    Since the caller already knows which show it's running, resolution
+    happens here rather than handing back the whole file (including every
+    other show's bundle) for the caller to pick apart.
+
+    Returns (resolved, show_bundle):
+      - resolved: a single flat dict — the value to pre-fill each
+        interactive prompt with, global fields overridden by this show's
+        bundle where present (including "website_repo").
+      - show_bundle: the raw per-show dict as written in defaults.json
+        (or {} if this show has no entry yet). Used only to decide
+        whether to offer the "use these defaults?" bundle prompt and to
+        display what it contains.
 
     Created automatically with DEFAULT_DEFAULTS on first run if missing.
     Hand-editable afterward — same spirit as history.json. Any keys missing
@@ -177,17 +192,25 @@ def load_defaults():
     if not DEFAULTS_FILE.exists():
         with open(DEFAULTS_FILE, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_DEFAULTS, f, indent=2)
-        return dict(DEFAULT_DEFAULTS)
+        on_disk = {}
+    else:
+        try:
+            with open(DEFAULTS_FILE, "r", encoding="utf-8") as f:
+                on_disk = json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load defaults file, using built-in defaults: {e}")
+            on_disk = {}
 
-    try:
-        with open(DEFAULTS_FILE, "r", encoding="utf-8") as f:
-            on_disk = json.load(f)
-        merged = dict(DEFAULT_DEFAULTS)
-        merged.update(on_disk)
-        return merged
-    except Exception as e:
-        logger.warning(f"Failed to load defaults file, using built-in defaults: {e}")
-        return dict(DEFAULT_DEFAULTS)
+    merged = dict(DEFAULT_DEFAULTS)
+    merged.update(on_disk)
+
+    show_bundle = merged.get("shows", {}).get(show, {})
+
+    resolved = dict(merged)
+    resolved.pop("shows", None)
+    resolved.update(show_bundle)
+
+    return resolved, show_bundle
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -698,7 +721,7 @@ def main():
     if args.show is None:
         args.show = prompt_str("Show slug", DEFAULT_DEFAULTS["show"])
 
-    defaults = load_defaults()
+    defaults, show_defaults = load_defaults(args.show)
 
     # ── Resolve remaining fields that support interactive prompting ──────────
     # Anything passed explicitly on the CLI skips its prompt.
@@ -712,7 +735,6 @@ def main():
     # apply the whole bundle at once instead of prompting for each field.
     PROMPTED_FIELDS = ("video", "upload", "archive", "buzzsprout", "jekyll")
 
-    show_defaults = defaults.get("shows", {}).get(args.show)
     untouched = all(getattr(args, field) is None for field in PROMPTED_FIELDS)
 
     if show_defaults and untouched:
