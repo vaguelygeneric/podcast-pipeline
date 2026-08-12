@@ -153,6 +153,12 @@ DEFAULT_DEFAULTS = {
     "jekyll": True,
     "test_upload": False,
     "website_repo": "../website",
+    # Per-show bundles. Keyed by show slug; any subset of the prompted
+    # fields above (video/upload/archive/buzzsprout/jekyll) can be given.
+    # When a run's --show matches a key here, and none of those fields
+    # were passed explicitly on the CLI, the user is offered a single
+    # "use these defaults?" prompt instead of one prompt per field.
+    "shows": {},
 }
 
 
@@ -695,6 +701,48 @@ def main():
 
     if args.desc is None:
         args.desc = prompt_str("Episode description")
+
+    # ── Show-level default bundle ─────────────────────────────────────────
+    # If defaults.json has a "shows" entry for this show, and none of the
+    # fields it covers were already passed explicitly on the CLI, offer to
+    # apply the whole bundle at once instead of prompting for each field.
+    PROMPTED_FIELDS = ("video", "upload", "archive", "buzzsprout", "jekyll")
+
+    show_defaults = defaults.get("shows", {}).get(args.show)
+    untouched = all(getattr(args, field) is None for field in PROMPTED_FIELDS)
+
+    if show_defaults and untouched:
+        print(f"\nDefaults detected for show '{args.show}':")
+        for field in PROMPTED_FIELDS:
+            if field in show_defaults:
+                print(f"  {field}: {show_defaults[field]}")
+        print()
+
+        if prompt_yn("Use these defaults?", True):
+            for field in PROMPTED_FIELDS:
+                if field in show_defaults:
+                    setattr(args, field, show_defaults[field])
+
+            # Same credential gating as the per-field prompts below — never
+            # silently attempt an upload we don't have credentials for.
+            if args.archive and not env_vars_present("IA_ACCESS_KEY", "IA_SECRET_KEY"):
+                args.archive = False
+                logger.info(
+                    "[SKIP] IA_ACCESS_KEY/IA_SECRET_KEY not set — "
+                    "forcing archive=False despite show defaults"
+                )
+
+            if args.buzzsprout and not env_vars_present("BUZZSPROUT_API_TOKEN", "BUZZSPROUT_PODCAST_ID"):
+                args.buzzsprout = False
+                logger.info(
+                    "[SKIP] BUZZSPROUT_API_TOKEN/BUZZSPROUT_PODCAST_ID not set — "
+                    "forcing buzzsprout=False despite show defaults"
+                )
+
+            print("Using the following settings:")
+            for field in PROMPTED_FIELDS:
+                print(f"  {field}: {getattr(args, field)}")
+            print()
 
     if args.video is None:
         args.video = prompt_yn("Generate video?", defaults["video"])
