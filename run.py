@@ -99,6 +99,7 @@ the script warns and requires confirmation.
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 import uuid
@@ -222,6 +223,12 @@ def prompt_yn(label: str, default: bool) -> bool:
             return False
 
         print("Please answer y or n.")
+
+
+def env_vars_present(*names: str) -> bool:
+    """Return True only if every named env var is set to a non-empty value."""
+
+    return all(os.getenv(name) for name in names)
 
 
 def prompt_date(label: str, default: "date") -> "date":
@@ -695,13 +702,26 @@ def main():
     if args.upload is None:
         args.upload = prompt_yn("Enable platform uploads?", defaults["upload"])
 
-    # TODO: if no upload, no need to prompt for the next ones
-    if args.upload:    
+    if args.upload:
         if args.archive is None:
-            args.archive = prompt_yn("Upload to Internet Archive?", defaults["archive"])
+            if env_vars_present("IA_ACCESS_KEY", "IA_SECRET_KEY"):
+                args.archive = prompt_yn("Upload to Internet Archive?", defaults["archive"])
+            else:
+                args.archive = False
+                logger.info(
+                    "[SKIP] IA_ACCESS_KEY/IA_SECRET_KEY not set — skipping "
+                    "Internet Archive upload prompt"
+                )
 
         if args.buzzsprout is None:
-            args.buzzsprout = prompt_yn("Upload to Buzzsprout?", defaults["buzzsprout"])
+            if env_vars_present("BUZZSPROUT_API_TOKEN", "BUZZSPROUT_PODCAST_ID"):
+                args.buzzsprout = prompt_yn("Upload to Buzzsprout?", defaults["buzzsprout"])
+            else:
+                args.buzzsprout = False
+                logger.info(
+                    "[SKIP] BUZZSPROUT_API_TOKEN/BUZZSPROUT_PODCAST_ID not set — "
+                    "skipping Buzzsprout upload prompt"
+                )
 
     if args.jekyll is None:
         args.jekyll = prompt_yn("Generate Jekyll page?", defaults["jekyll"])
