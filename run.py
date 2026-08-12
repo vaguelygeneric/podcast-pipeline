@@ -692,14 +692,16 @@ def main():
     if args.video is None:
         args.video = prompt_yn("Generate video?", defaults["video"])
 
-    if args.archive is None:
-        args.archive = prompt_yn("Upload to Internet Archive?", defaults["archive"])
-
-    if args.buzzsprout is None:
-        args.buzzsprout = prompt_yn("Upload to Buzzsprout?", defaults["buzzsprout"])
-
     if args.upload is None:
         args.upload = prompt_yn("Enable platform uploads?", defaults["upload"])
+
+    # TODO: if no upload, no need to prompt for the next ones
+    if args.upload:    
+        if args.archive is None:
+            args.archive = prompt_yn("Upload to Internet Archive?", defaults["archive"])
+
+        if args.buzzsprout is None:
+            args.buzzsprout = prompt_yn("Upload to Buzzsprout?", defaults["buzzsprout"])
 
     if args.jekyll is None:
         args.jekyll = prompt_yn("Generate Jekyll page?", defaults["jekyll"])
