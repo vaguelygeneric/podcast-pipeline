@@ -691,13 +691,17 @@ def main():
 
     args = parse_args()
 
+    # ── Resolve show first ────────────────────────────────────────────────
+    # defaults.json (and any per-show "shows" bundle in it) is only loaded
+    # once we know which show we're dealing with — no need to read it just
+    # to prompt for the show slug itself.
+    if args.show is None:
+        args.show = prompt_str("Show slug", DEFAULT_DEFAULTS["show"])
+
     defaults = load_defaults()
 
-    # ── Resolve fields that support interactive prompting ────────────────────
+    # ── Resolve remaining fields that support interactive prompting ──────────
     # Anything passed explicitly on the CLI skips its prompt.
-
-    if args.show is None:
-        args.show = prompt_str("Show slug", defaults["show"])
 
     if args.desc is None:
         args.desc = prompt_str("Episode description")
