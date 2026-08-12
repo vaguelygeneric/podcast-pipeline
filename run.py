@@ -260,6 +260,27 @@ def env_vars_present(*names: str) -> bool:
     return all(os.getenv(name) for name in names)
 
 
+def prompt_choice(label: str, options: list, default: str) -> str:
+    """
+    Prompt for one of a fixed set of string choices; blank input accepts
+    the default. Used for --audio-profile — free text would let a typo
+    silently fall through to a KeyError deep in pipeline.audio_profiles.
+    """
+
+    listing = ", ".join(options)
+
+    while True:
+        response = input(f"{label} [{default}] (options: {listing}): ").strip()
+
+        if not response:
+            return default
+
+        if response in options:
+            return response
+
+        print(f"Please choose one of: {listing}")
+
+
 def prompt_date(label: str, default: "date") -> "date":
     """Prompt for a YYYY-MM-DD date; blank input accepts the default."""
 
@@ -273,6 +294,67 @@ def prompt_date(label: str, default: "date") -> "date":
             return date.fromisoformat(response)
         except ValueError:
             print("Please enter a date as YYYY-MM-DD.")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Show slug safety
+# ──────────────────────────────────────────────────────────────────────────────
+
+# The convention every existing show follows ("daily", "vault-of-the-raw"):
+# lowercase letters, digits, and single hyphens between words. Anything
+# outside that breaks downstream in ways that don't fail loudly:
+#   • archive.org identifiers (f"{show}_ep{ep:04d}") don't allow spaces —
+#     the upload is rejected or the identifier gets silently mangled.
+#   • the Jekyll permalink (/podcast/{show}/{ep}/) is a URL path segment —
+#     a raw space there is invalid.
+SHOW_SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def slugify_show(raw: str) -> str:
+    """
+    Best-effort conversion of an arbitrary show name into the safe slug
+    format: lowercase, non-alphanumeric runs collapsed to single hyphens,
+    leading/trailing hyphens stripped. e.g. "Daily Temp!" -> "daily-temp".
+    """
+
+    slug = raw.strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+
+    return slug
+
+
+def ensure_safe_show_slug(show: str) -> str:
+    """
+    Validate a show slug against SHOW_SLUG_RE; if it doesn't match, explain
+    why (see module comment above) and offer to use the slugified version
+    instead. Declining keeps the original value as-is — this only warns,
+    it never aborts, since there may be a legitimate reason to proceed
+    (e.g. deliberately probing what breaks).
+    """
+
+    if SHOW_SLUG_RE.match(show):
+        return show
+
+    slugified = slugify_show(show)
+
+    logger.warning(
+        f"\nShow slug {show!r} contains characters that break things "
+        f"downstream — archive.org identifiers and the Jekyll permalink "
+        f"URL don't allow spaces or most punctuation.\n"
+    )
+
+    if not slugified:
+        sys.exit(f"Error: {show!r} has no usable characters once slugified.")
+
+    if prompt_yn(f"Use {slugified!r} instead?", True):
+        return slugified
+
+    logger.warning(
+        f"Continuing with {show!r} as-is — archive.org upload and/or the "
+        f"Jekyll permalink may fail or produce broken output."
+    )
+    return show
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -720,6 +802,11 @@ def main():
     # to prompt for the show slug itself.
     if args.show is None:
         args.show = prompt_str("Show slug", DEFAULT_DEFAULTS["show"])
+
+    # Applies whether the slug came from the CLI or the prompt above — a
+    # typo'd --show is just as capable of breaking archive.org/Jekyll as a
+    # careless prompt answer.
+    args.show = ensure_safe_show_slug(args.show)
 
     defaults, show_defaults = load_defaults(args.show)
 
