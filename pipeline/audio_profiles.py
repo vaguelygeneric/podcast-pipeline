@@ -24,11 +24,18 @@ that show's bundle under "shows"[show]["audio_profile"], which run.py
 resolves before calling into this module; a show with no standing choice
 just gets prompted each run (see prompt_choice() in run.py).
 
-NOTE: "single_channel" mode currently ignores the lufs/tp/lra fields in the
-profile and just calls pipeline.audio's existing hardcoded constants
-(-16 LUFS / -1.5 TP / 11 LRA) -- those fields are there for when/if that
-path gets parameterized the same way audio_stereo's did. They're set to
-match the current constants so there's no discrepancy either way.
+All three modes now accept the same profile override keys (lufs, tp, lra,
+plus pre_filter for single_channel or channel_filter for the two dual_*
+modes) -- see pipeline/audio.py's and pipeline/audio_stereo.py's module
+docstrings for exactly what each key does per mode. This is what makes a
+profile a real place to test a processing change (new filter chain, a
+different loudness target) against a throwaway profile name, without
+touching the profile real episodes publish under.
+
+fade_out_seconds is a recognized profile key, reserved for a future
+fade-out stage, but it is NOT implemented by any mode yet -- see the check
+in process() below, which prints a visible notice rather than silently
+ignoring it if it's set.
 """
 
 from pathlib import Path
@@ -77,12 +84,20 @@ def process(
     every other mode.
     """
 
+    if profile.get("fade_out_seconds"):
+        print(
+            f"[NOT YET IMPLEMENTED] profile {profile_name!r} sets "
+            f"fade_out_seconds={profile['fade_out_seconds']!r} -- this key "
+            "is reserved but no mode applies it yet. No fade will be added; "
+            "output is otherwise processed normally."
+        )
+
     mode = profile.get("mode", "single_channel")
 
     if mode == "single_channel":
         from pipeline.audio import loudnorm_pass1, loudnorm_pass2
-        stats = loudnorm_pass1(input_file)
-        loudnorm_pass2(input_file, output_file, stats)
+        stats = loudnorm_pass1(input_file, profile=profile)
+        loudnorm_pass2(input_file, output_file, stats, profile=profile)
 
     elif mode == "dual_lav_stereo":
         from pipeline.audio_stereo import process_conversation_audio

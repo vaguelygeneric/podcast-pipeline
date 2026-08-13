@@ -276,12 +276,29 @@ how you'd spin up a one-off/test show using an existing profile.
 | `dual_lav_stereo` | Two people, each on their own lav mic, recorded to a single stereo file (left = speaker A, right = speaker B) | Splits the channels, runs each through a cleanup filter chain, then loudnorms each channel **independently** to the same target — so an unevenly-recorded pair (one mic hot, one quiet) gets leveled *before* mixing, which a single loudnorm pass on the combined signal can't do. Mixes to mono, then runs one more loudnorm pass on the mixdown as a safety net (summing two independently-normalized channels tends to land a few dB hot). This is `pipeline/audio_stereo.py`. |
 | `dual_mono_files` | Remote/video-call podcasts, where each participant records locally on their own device and you end up with two separate mono files instead of one stereo file | Same leveling and mixdown as `dual_lav_stereo` — independent per-speaker cleanup + loudnorm, then mix, then a safety-net loudnorm pass — just skipping the channel-split step since each file is already one speaker only. Pass speaker A's file as the usual `input` argument and speaker B's file with `--input2`. Also lives in `pipeline/audio_stereo.py`. |
 
+Every mode reads `lufs`/`tp`/`lra` from its profile, falling back to
+-16/-1.5/11 if omitted. Each mode also has one filter-chain override key:
+`single_channel` uses `pre_filter` (replaces the whole noise-reduction
+chain — it's not appended to the default, so include whatever cleanup you
+still want), `dual_lav_stereo` and `dual_mono_files` use `channel_filter`
+(applied per-speaker before normalization, same idea). This is the
+mechanism for testing a processing change safely: add a new
+`audio_profiles` entry with the tweak, point a throwaway show or a test
+`--audio-profile` at it, and the real `daily`/`vault-of-the-raw` profiles
+stay untouched.
+
+`fade_out_seconds` is accepted on any profile but **not implemented** by
+any mode yet — setting it prints a `[NOT YET IMPLEMENTED]` notice rather
+than silently doing nothing, so it's not a trap. If a future patch adds
+this, it needs to land in the same audio pass that also encodes to mp3,
+since ffmpeg's `-b:a 96k` there is a fixed bitrate — a correctly-implemented
+fade shouldn't move the output file's size at all; a naive "trim + re-fade"
+implementation done as a separate re-encode pass could easily reintroduce a
+bitrate mismatch or an accidental content trim, either of which would.
+
 To add a profile, give it a `mode` and your target `lufs`/`tp`/`lra` under
-`audio_profiles` in `config/defaults.json`. `dual_lav_stereo` and
-`dual_mono_files` profiles also need a `channel_filter` — an ffmpeg
-audio-filter-chain string applied to each speaker before normalization
-(adjust this if your mics need a different noise-reduction/gating approach
-than the default).
+`audio_profiles` in `config/defaults.json`, plus a `pre_filter` or
+`channel_filter` override if the default cleanup chain isn't right for it.
 
 For a `dual_mono_files` profile, pass both files on the command line:
 
@@ -290,7 +307,7 @@ python run.py speaker_a.wav --input2 speaker_b.wav --show some-remote-show --aud
 ```
 
 **Caveats:**
-- `--test-audio` currently only previews the `single_channel` path (single-pass vs. two-pass mp3s for A/B listening), regardless of which profile is selected — there's no equivalent quick-preview command for `dual_lav_stereo` or `dual_mono_files` yet.
+- `--test-audio` (via `test_audio.py`) currently only previews the `single_channel` path (single-pass vs. two-pass mp3s for A/B listening) using the module's built-in defaults — it doesn't read `config/defaults.json` or accept a profile yet, so it can't preview a custom profile before committing to a real run. There's also no equivalent quick-preview command for `dual_lav_stereo` or `dual_mono_files`.
 - `dual_mono_files` doesn't do anything to line up the two files in time — if the two participants didn't start recording at exactly the same moment, sync them (trim the lead-in) before running the pipeline.
 
 
