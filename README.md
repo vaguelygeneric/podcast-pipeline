@@ -204,14 +204,10 @@ is meant to be hand-edited afterward.
 
 ```json
 {
-  "show": "daily",
   "video": false,
-  "archive": true,
-  "buzzsprout": false,
-  "upload": true,
+  "upload": false,
   "jekyll": true,
   "test_upload": false,
-  "jekyll_site_repo": "../website",
 
   "audio_profiles": {
     "daily": {
@@ -233,7 +229,14 @@ is meant to be hand-edited afterward.
 
   "shows": {
     "daily": {
-      "audio_profile": "daily"
+      "audio_profile": "daily",
+      "video": false,
+      "archive": true,
+      "buzzsprout": false,
+      "upload": true,
+      "jekyll": true,
+      "test_upload": false,
+      "jekyll_site_repo": "../website"
     },
     "vault-of-the-raw": {
       "audio_profile": "vault-of-the-raw"
@@ -242,9 +245,15 @@ is meant to be hand-edited afterward.
 }
 ```
 
-**Top-level fields** (`show`, `video`, `archive`, `buzzsprout`, `upload`,
-`jekyll`, `test_upload`, `jekyll_site_repo`) are global fallbacks — the
-value used to pre-fill a prompt when nothing more specific applies.
+**Top-level fields** are the bootstrap defaults for a show that has no
+`"shows"` entry of its own yet — deliberately conservative (`upload:
+false`) rather than mirroring any particular established show. `show`,
+`archive`, `buzzsprout`, and `jekyll_site_repo` aren't listed at the top
+level above; they still work there if you set them (anything omitted here
+falls back to a built-in code-level default — see `DEFAULT_DEFAULTS` in
+`run.py`), but the recommended pattern is to leave brand-new-show defaults
+minimal and put a show's *real* settings in its own `shows` bundle once
+you've run it a couple of times and know what they should be.
 
 **`audio_profiles`** is a registry of named audio-processing profiles (this
 used to be its own file, `audio_profiles.json`, at the project root — it's
@@ -263,10 +272,19 @@ old `"_default"` key).
 the `audio_profiles` registry above, not an inline profile definition. When
 a run's `--show` matches a key here, and none of those fields were passed
 explicitly on the command line, you're offered a single "use these
-defaults?" prompt instead of one prompt per field. A show with no bundle
-(or only a partial one) just gets prompted individually for whatever isn't
-covered — including a first-run choice of audio profile, which is exactly
-how you'd spin up a one-off/test show using an existing profile.
+defaults?" prompt instead of one prompt per field. **Give a show's bundle
+every prompted field** (as `daily`'s does above) and accepting the offer
+skips every prompt outright — leave one out and that one field still gets
+asked for individually, using the top-level value as its suggested answer.
+A show with no bundle at all (like a brand-new test show) just gets
+prompted individually for everything, including a first-run choice of
+audio profile — which is exactly how you'd spin one up using an existing
+profile without writing a bundle for it first.
+
+`test_upload` doesn't currently do anything when set here or in a show's
+bundle — it's only ever read from the `--test-upload` CLI flag, never from
+this file. It's included above for the sake of a complete example, not
+because it has any effect placed here.
 
 ### Audio profile modes
 

@@ -1,12 +1,8 @@
 {
-  "show": "daily",
   "video": false,
-  "archive": true,
-  "buzzsprout": false,
-  "upload": true,
+  "upload": false,
   "jekyll": true,
   "test_upload": false,
-  "jekyll_site_repo": "../website",
 
   "audio_profiles": {
     "daily": {
@@ -29,7 +25,14 @@
 
   "shows": {
     "daily": {
-      "audio_profile": "daily"
+      "audio_profile": "daily",
+      "video": false,
+      "archive": true,
+      "buzzsprout": false,
+      "upload": true,
+      "jekyll": true,
+      "test_upload": false,
+      "jekyll_site_repo": "../website"
     },
     "vault-of-the-raw": {
       "audio_profile": "vault-of-the-raw"

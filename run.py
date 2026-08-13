@@ -158,7 +158,10 @@ DEFAULT_DEFAULTS = {
     "video": False,
     "archive": True,
     "buzzsprout": False,
-    "upload": True,
+    # Off by default — this is the bootstrap value for a brand-new show
+    # with no "shows" bundle of its own yet. An established show (with its
+    # own bundle entry) sets this explicitly and isn't affected.
+    "upload": False,
     "jekyll": True,
     "test_upload": False,
     "jekyll_site_repo": "../website",
