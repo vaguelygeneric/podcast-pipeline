@@ -432,14 +432,14 @@ permalink: /podcast/{show}/{ep_str}/
     return path
 
 
-def generate_website_patch(md_path: Path, show: str, ep_str: str, website_repo=None) -> Path:
+def generate_website_patch(md_path: Path, show: str, ep_str: str, jekyll_site_repo=None) -> Path:
     """
     Generate a git-apply-compatible patch that adds or updates this
     episode's Jekyll page in the website repo, at _podcast/<show>/<NNNN>.md.
 
     Two cases:
 
-    1. The file doesn't exist yet in the website repo (or website_repo
+    1. The file doesn't exist yet in the website repo (or jekyll_site_repo
        isn't configured/found) — plain new-file patch, same as before.
 
     2. The file already exists (e.g. show notes pre-written before
@@ -459,16 +459,16 @@ def generate_website_patch(md_path: Path, show: str, ep_str: str, website_repo=N
 
     existing_path = None
 
-    if website_repo:
-        website_repo_path = Path(website_repo)
+    if jekyll_site_repo:
+        jekyll_site_repo_path = Path(jekyll_site_repo)
 
-        if website_repo_path.is_dir():
-            candidate = website_repo_path / target_rel_path
+        if jekyll_site_repo_path.is_dir():
+            candidate = jekyll_site_repo_path / target_rel_path
             if candidate.exists():
                 existing_path = candidate
         else:
             logger.warning(
-                f"Website repo not found at '{website_repo_path}' — "
+                f"Jekyll site repo not found at '{jekyll_site_repo_path}' — "
                 f"generating a new-file patch without checking for "
                 f"pre-written content."
             )

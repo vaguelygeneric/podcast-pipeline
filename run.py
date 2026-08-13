@@ -161,7 +161,7 @@ DEFAULT_DEFAULTS = {
     "upload": True,
     "jekyll": True,
     "test_upload": False,
-    "website_repo": "../website",
+    "jekyll_site_repo": "../website",
     # Named audio profiles (formerly audio_profiles.json at the repo root).
     # Keyed by profile name -- NOT show slug, so a one-off/test show can
     # reuse an existing profile (e.g. "daily") by name. See
@@ -194,7 +194,7 @@ def load_defaults(show: str):
     Returns (resolved, show_bundle):
       - resolved: a single flat dict — the value to pre-fill each
         interactive prompt with, global fields overridden by this show's
-        bundle where present (including "website_repo" and "audio_profile").
+        bundle where present (including "jekyll_site_repo" and "audio_profile").
         Also carries the full "audio_profiles" registry through unchanged,
         for pipeline.audio_profiles.get_profile() to look names up in.
       - show_bundle: the raw per-show dict as written in defaults.json
@@ -749,14 +749,14 @@ def parse_args():
     )
 
     p.add_argument(
-        "--website-repo",
-        dest="website_repo",
+        "--jekyll-site-repo",
+        dest="jekyll_site_repo",
         default=None,
         help=(
-            "Path to the website repo checkout, used to merge into a "
+            "Path to the Jekyll site repo checkout, used to merge into a "
             "pre-written episode page instead of generating a plain "
             "new-file patch. Defaults to config/defaults.json's "
-            "'website_repo' value ('../website' out of the box), or a "
+            "'jekyll_site_repo' value ('../website' out of the box), or a "
             "show-specific override under that show's \"shows\" bundle."
         )
     )
@@ -1168,7 +1168,7 @@ def main():
 
             website_patch_path = generate_website_patch(
                 md_path, args.show, ep_str,
-                website_repo=args.website_repo or defaults["website_repo"],
+                jekyll_site_repo=args.jekyll_site_repo or defaults["jekyll_site_repo"],
             )
             logger.info(f"[OK] Website patch: {website_patch_path}")
         except Exception as e:

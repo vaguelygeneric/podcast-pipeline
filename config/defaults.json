@@ -6,7 +6,7 @@
   "upload": true,
   "jekyll": true,
   "test_upload": false,
-  "website_repo": "../website",
+  "jekyll_site_repo": "../website",
 
   "audio_profiles": {
     "daily": {

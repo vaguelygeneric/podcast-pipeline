@@ -172,7 +172,7 @@ python run.py 20240420_143022_episode.m4a \
 | `--title` | `Episode NNNN` | Episode title |
 | `--publish-date` | prompted | Release date (`YYYY-MM-DD`) for Jekyll front matter |
 | `--logo` | `.files/images/logo.png` | Logo PNG for video overlay |
-| `--website-repo` | `config/defaults.json`'s `website_repo` | Path to the website repo checkout, for merging into a pre-written episode page |
+| `--jekyll-site-repo` | `config/defaults.json`'s `jekyll_site_repo` | Path to the Jekyll site repo checkout, for merging into a pre-written episode page |
 | `--video` / `--no-video` | prompted (off by default) | Generate video |
 | `--upload` / `--no-upload` | prompted (on by default) | Enable platform uploads (Archive/Buzzsprout gated separately below) |
 | `--archive` / `--no-archive` | prompted, or skipped+`False` if `IA_ACCESS_KEY`/`IA_SECRET_KEY` aren't set | Upload mp3 to Internet Archive |
@@ -211,7 +211,7 @@ is meant to be hand-edited afterward.
   "upload": true,
   "jekyll": true,
   "test_upload": false,
-  "website_repo": "../website",
+  "jekyll_site_repo": "../website",
 
   "audio_profiles": {
     "daily": {
@@ -243,8 +243,8 @@ is meant to be hand-edited afterward.
 ```
 
 **Top-level fields** (`show`, `video`, `archive`, `buzzsprout`, `upload`,
-`jekyll`, `test_upload`, `website_repo`) are global fallbacks — the value
-used to pre-fill a prompt when nothing more specific applies.
+`jekyll`, `test_upload`, `jekyll_site_repo`) are global fallbacks — the
+value used to pre-fill a prompt when nothing more specific applies.
 
 **`audio_profiles`** is a registry of named audio-processing profiles (this
 used to be its own file, `audio_profiles.json`, at the project root — it's
@@ -258,7 +258,7 @@ has no standing choice of its own (this replaces `audio_profiles.json`'s
 old `"_default"` key).
 
 **`shows`** holds per-show bundles, keyed by show slug. Any subset of
-`video`/`upload`/`archive`/`buzzsprout`/`jekyll`/`website_repo`/
+`video`/`upload`/`archive`/`buzzsprout`/`jekyll`/`jekyll_site_repo`/
 `audio_profile` can be given — `audio_profile` here is a *name* referencing
 the `audio_profiles` registry above, not an inline profile definition. When
 a run's `--show` matches a key here, and none of those fields were passed
