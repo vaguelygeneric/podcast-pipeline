@@ -32,7 +32,8 @@
       "upload": true,
       "jekyll": true,
       "test_upload": false,
-      "jekyll_site_repo": "../website"
+      "jekyll_site_repo": "../website",
+      "fade_out_seconds": 2
     },
     "vault-of-the-raw": {
       "audio_profile": "vault-of-the-raw"

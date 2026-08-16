@@ -26,20 +26,39 @@ PROFILE OVERRIDES:
   below when a key or the whole profile is omitted, so direct/manual calls
   keep working unchanged):
 
-    lufs, tp, lra   — loudnorm targets (see constants below for meaning)
-    pre_filter      — replaces the whole noise-reduction chain above
-                       (NOT appended to it — if you override this, include
-                       whatever cleanup you still want)
+    lufs, tp, lra     — loudnorm targets (see constants below for meaning)
+    pre_filter        — replaces the whole noise-reduction chain above
+                         (NOT appended to it — if you override this,
+                         include whatever cleanup you still want)
+    fade_out_seconds  — linear fade-out over the last N seconds of the
+                         episode. Folded into the same -af chain and the
+                         same ffmpeg invocation that already does loudnorm
+                         and encodes to mp3 — NOT a separate pass. That
+                         matters: duration and bitrate (-b:a 96k) are then
+                         guaranteed unchanged by adding a fade, since
+                         nothing about the encode itself changes, just one
+                         more filter in the same chain. A separate
+                         re-encode pass for this is a real footgun — it's
+                         very easy for such a pass to end up on a different
+                         bitrate than the rest of the pipeline uses, which
+                         changes file size independently of anything to do
+                         with the fade itself. Duration is measured via
+                         ffprobe on the (unmodified-duration) input file,
+                         since none of this module's filters change
+                         duration, so input duration == output duration.
+                         Only applied to the final encode -- NOT included
+                         in loudnorm_pass1()'s measurement pass, since
+                         that pass exists purely to measure the original
+                         file's loudness for pass 2's correction; the fade
+                         is a delivery-only cosmetic step layered on top,
+                         applied after loudnorm in the filter chain so it
+                         fades the final normalized signal rather than
+                         interacting with loudnorm's gain calculation.
 
   This is what makes it possible to test a filter-chain change (or a new
   show with a different mic/room) against a throwaway profile name without
   touching the "daily" profile real episodes are published under — add a
   new "audio_profiles" entry, point a test episode's --audio-profile at it.
-
-  fade_out_seconds is accepted as a recognized profile key but NOT YET
-  IMPLEMENTED — see pipeline/audio_profiles.py's process(), which prints a
-  visible notice if it's set on the resolved profile rather than silently
-  doing nothing with it.
 """
 
 import re
@@ -64,6 +83,42 @@ def _run(cmd: list, capture: bool = False):
     if capture:
         return subprocess.run(cmd, capture_output=True, text=True)
     subprocess.run(cmd, check=True)
+
+
+def _probe_duration_seconds(file: Path) -> float:
+    """
+    Raw-seconds duration via ffprobe -- deliberately separate from
+    pipeline/publish.py's get_duration(), which truncates to whole seconds
+    for display ("MM:SS"). A fade-out start time computed from a truncated
+    duration could be off by up to a second, which matters at the
+    resolution of a 1-2 second fade.
+    """
+    cmd = [
+        "ffprobe", "-i", str(file),
+        "-show_entries", "format=duration",
+        "-v", "quiet",
+        "-of", "csv=p=0",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return float(result.stdout.strip())
+
+
+def _fade_out_filter(input_file: Path, fade_out_seconds) -> str:
+    """
+    Build an afade filter string for the last `fade_out_seconds` of
+    `input_file`, or return "" if fade_out_seconds is falsy (None or 0) --
+    the common case, so every call site can unconditionally append this
+    with no branching of its own.
+
+    Clamps the fade start to 0 if fade_out_seconds turns out to be longer
+    than the file itself, rather than handing ffmpeg a negative start time.
+    """
+    if not fade_out_seconds:
+        return ""
+
+    duration = _probe_duration_seconds(input_file)
+    start = max(0.0, duration - float(fade_out_seconds))
+    return f",afade=t=out:st={start:.3f}:d={fade_out_seconds}"
 
 
 def loudnorm_pass1(input_file: Path, profile: dict = None) -> dict:
@@ -110,7 +165,8 @@ def loudnorm_pass2(input_file: Path, output_file: Path, stats: dict, profile: di
 
     profile: optional dict of overrides — see module docstring. Must match
              whatever was passed to the loudnorm_pass1() call that produced
-             `stats`.
+             `stats`. fade_out_seconds, if set, is applied here (not in
+             pass 1 — see module docstring).
     """
     profile = profile or {}
     pre_filter = profile.get("pre_filter", _PRE_FILTER)
@@ -127,10 +183,11 @@ def loudnorm_pass2(input_file: Path, output_file: Path, stats: dict, profile: di
         f"offset={stats['target_offset']}:"
         f"linear=true:print_format=summary"
     )
+    fade = _fade_out_filter(input_file, profile.get("fade_out_seconds"))
     cmd = [
         "ffmpeg", "-y",
         "-i", str(input_file),
-        "-af", f"{pre_filter},{ln}",
+        "-af", f"{pre_filter},{ln}{fade}",
         "-ar", "44100",    # sample rate
         "-ac", "1",        # mono (podcast standard)
         "-b:a", "96k",     # bitrate — fine for speech; bump to 128k for music
@@ -153,10 +210,11 @@ def single_pass(input_file: Path, output_file: Path, profile: dict = None):
     tp = profile.get("tp", _TP)
     lra = profile.get("lra", _LRA)
 
+    fade = _fade_out_filter(input_file, profile.get("fade_out_seconds"))
     cmd = [
         "ffmpeg", "-y",
         "-i", str(input_file),
-        "-af", f"{pre_filter},loudnorm=I={lufs}:TP={tp}:LRA={lra}",
+        "-af", f"{pre_filter},loudnorm=I={lufs}:TP={tp}:LRA={lra}{fade}",
         "-ar", "44100",
         "-ac", "1",
         "-b:a", "96k",

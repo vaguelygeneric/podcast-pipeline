@@ -34,6 +34,11 @@ Goals:
     - Reduce room/background noise
     - Preserve natural conversational dynamics
     - Avoid overprocessed "radio voice" sound
+
+An optional fade_out_seconds profile key applies a linear fade over the
+last N seconds, folded into the final mixdown encode's -af chain (same
+single-pass reasoning as pipeline/audio.py — no separate re-encode pass,
+so duration and bitrate stay exactly what they'd be without it).
 """
 
 import re
@@ -57,6 +62,31 @@ def _run(cmd: list, capture: bool = False):
         return subprocess.run(cmd, capture_output=True, text=True)
 
     subprocess.run(cmd, check=True)
+
+
+def _probe_duration_seconds(file: Path) -> float:
+    """Raw-seconds duration via ffprobe. See pipeline/audio.py's copy of
+    this for why it's not pipeline/publish.py's get_duration()."""
+    cmd = [
+        "ffprobe", "-i", str(file),
+        "-show_entries", "format=duration",
+        "-v", "quiet",
+        "-of", "csv=p=0",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return float(result.stdout.strip())
+
+
+def _fade_out_filter(input_file: Path, fade_out_seconds) -> str:
+    """Build an afade filter string for the last fade_out_seconds of
+    input_file, or "" if falsy. See pipeline/audio.py's copy of this for
+    the full explanation (fold into the same pass, not a separate one)."""
+    if not fade_out_seconds:
+        return ""
+
+    duration = _probe_duration_seconds(input_file)
+    start = max(0.0, duration - float(fade_out_seconds))
+    return f",afade=t=out:st={start:.3f}:d={fade_out_seconds}"
 
 
 # -------------------------------------------------------------------
@@ -216,7 +246,8 @@ def _level_and_mix(
     output_file: Path,
     lufs: float,
     tp: float,
-    lra: float
+    lra: float,
+    fade_out_seconds=None,
 ):
     """
     Shared back half of both pipelines: independently loudnorm two
@@ -224,6 +255,12 @@ def _level_and_mix(
     loudnorm pass on the mixdown and encode to mp3. Both
     process_conversation_audio() and process_dual_mono_files() call this
     once their respective inputs have been isolated into mono wavs.
+
+    fade_out_seconds, if given, is folded into this final encode's -af
+    chain (same reasoning as pipeline/audio.py's loudnorm_pass2) — the
+    mixdown wav's own duration is measured directly, since it exists on
+    disk at this point and there's no need to assume anything upstream
+    preserved the original file's duration exactly.
     """
 
     tmp = left_filtered.parent  # shares the caller's tempdir
@@ -252,7 +289,8 @@ def _level_and_mix(
     # Safety-net pass: summing two independently-normalized speech
     # channels typically lands a few dB above target, so re-measure
     # and correct once more on the actual mixdown, encoding straight
-    # to the final mono mp3.
+    # to the final mono mp3. Fade-out (if any) is applied here too --
+    # same single-pass reasoning as pipeline/audio.py.
     final_stats = _loudnorm_measure(mixed, lufs, tp, lra)
     ln = (
         f"loudnorm=I={lufs}:TP={tp}:LRA={lra}:"
@@ -263,10 +301,11 @@ def _level_and_mix(
         f"offset={final_stats['target_offset']}:"
         f"linear=true:print_format=summary"
     )
+    fade = _fade_out_filter(mixed, fade_out_seconds)
     cmd = [
         "ffmpeg", "-y",
         "-i", str(mixed),
-        "-af", ln,
+        "-af", f"{ln}{fade}",
         "-ar", "44100",
         "-ac", "1",
         "-b:a", "96k",
@@ -286,7 +325,8 @@ def process_conversation_audio(
     why per-speaker leveling matters).
 
     profile: optional dict of overrides from config/defaults.json's
-             "audio_profiles" registry (keys: lufs, tp, lra, channel_filter).
+             "audio_profiles" registry (keys: lufs, tp, lra, channel_filter,
+             fade_out_seconds).
              Falls back to this module's own defaults when not given, so
              direct/manual calls keep working unchanged.
     """
@@ -305,7 +345,10 @@ def process_conversation_audio(
         _extract_and_filter_channel(input_file, "left", left_filtered, channel_filter)
         _extract_and_filter_channel(input_file, "right", right_filtered, channel_filter)
 
-        _level_and_mix(left_filtered, right_filtered, output_file, lufs, tp, lra)
+        _level_and_mix(
+            left_filtered, right_filtered, output_file, lufs, tp, lra,
+            fade_out_seconds=profile.get("fade_out_seconds"),
+        )
 
 
 def process_dual_mono_files(
@@ -323,7 +366,8 @@ def process_dual_mono_files(
     the channelsplit step since each file is already one speaker only.
 
     profile: optional dict of overrides from config/defaults.json's
-             "audio_profiles" registry (keys: lufs, tp, lra, channel_filter).
+             "audio_profiles" registry (keys: lufs, tp, lra, channel_filter,
+             fade_out_seconds).
              Falls back to this module's own defaults when not given.
     """
 
@@ -341,7 +385,10 @@ def process_dual_mono_files(
         _filter_mono_file(input_file_a, a_filtered, channel_filter)
         _filter_mono_file(input_file_b, b_filtered, channel_filter)
 
-        _level_and_mix(a_filtered, b_filtered, output_file, lufs, tp, lra)
+        _level_and_mix(
+            a_filtered, b_filtered, output_file, lufs, tp, lra,
+            fade_out_seconds=profile.get("fade_out_seconds"),
+        )
 
 
 def single_pass(

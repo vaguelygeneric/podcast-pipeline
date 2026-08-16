@@ -305,18 +305,23 @@ mechanism for testing a processing change safely: add a new
 `--audio-profile` at it, and the real `daily`/`vault-of-the-raw` profiles
 stay untouched.
 
-`fade_out_seconds` is accepted on any profile but **not implemented** by
-any mode yet — setting it prints a `[NOT YET IMPLEMENTED]` notice rather
-than silently doing nothing, so it's not a trap. If a future patch adds
-this, it needs to land in the same audio pass that also encodes to mp3,
-since ffmpeg's `-b:a 96k` there is a fixed bitrate — a correctly-implemented
-fade shouldn't move the output file's size at all; a naive "trim + re-fade"
-implementation done as a separate re-encode pass could easily reintroduce a
-bitrate mismatch or an accidental content trim, either of which would.
+`fade_out_seconds` applies a linear fade over the last N seconds of the
+episode, on every mode. It's folded into the same ffmpeg invocation that
+already does loudnorm and encodes to mp3 — not a separate pass — so the
+bitrate (`-b:a 96k`) and duration are unaffected by adding it; only the
+loudness of the last N seconds ramps down. Duration is measured with
+`ffprobe` right before that final encode (from the original input for
+`single_channel`, from the mixdown wav for the two dual modes), so the
+fade always lands relative to the *actual* file being produced, not an
+assumption about it. Not applied to the loudnorm measurement pass — only
+to final delivery, after loudnorm in the filter chain, so it fades the
+already-normalized signal rather than affecting the loudness measurement
+itself.
 
 To add a profile, give it a `mode` and your target `lufs`/`tp`/`lra` under
 `audio_profiles` in `config/defaults.json`, plus a `pre_filter` or
-`channel_filter` override if the default cleanup chain isn't right for it.
+`channel_filter` override if the default cleanup chain isn't right for it,
+plus `fade_out_seconds` if you want one.
 
 For a `dual_mono_files` profile, pass both files on the command line:
 
