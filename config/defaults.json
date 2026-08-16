@@ -3,24 +3,6 @@
   "upload": false,
   "jekyll": true,
   "test_upload": false,
-
-  "audio_profiles": {
-    "daily": {
-      "mode": "single_channel",
-      "lufs": -16,
-      "tp": -1.5,
-      "lra": 11
-    },
-
-    "vault-of-the-raw": {
-      "mode": "dual_lav_stereo",
-      "lufs": -16,
-      "tp": -1.5,
-      "lra": 11,
-      "channel_filter": "highpass=f=80,lowpass=f=14000,agate=threshold=-45dB:ratio=8:attack=20:release=250,acompressor=threshold=-18dB:ratio=3:attack=20:release=250:makeup=3"
-    }
-  },
-
   "default_audio_profile": "daily",
 
   "shows": {
@@ -32,11 +14,27 @@
       "upload": true,
       "jekyll": true,
       "test_upload": false,
-      "jekyll_site_repo": "../website",
-      "fade_out_seconds": 2
+      "jekyll_site_repo": "../website"
     },
     "vault-of-the-raw": {
       "audio_profile": "vault-of-the-raw"
+    }
+  },
+
+  "audio_profiles": {
+    "daily": {
+      "mode": "single_channel",
+      "lufs": -16,
+      "tp": -1.5,
+      "lra": 11,
+      "fade_out_seconds": 3
+    },
+    "vault-of-the-raw": {
+      "mode": "dual_lav_stereo",
+      "lufs": -16,
+      "tp": -1.5,
+      "lra": 11,
+      "channel_filter": "highpass=f=80,lowpass=f=14000,agate=threshold=-45dB:ratio=8:attack=20:release=250,acompressor=threshold=-18dB:ratio=3:attack=20:release=250:makeup=3"
     }
   }
 }
